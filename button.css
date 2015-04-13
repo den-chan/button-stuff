@@ -1,13 +1,25 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden
+}
+
+#pressers {
+  margin: 20px
+}
+
 #active {
   position: absolute;
-  right: 2em;
-  top: 2em
+  right: 20px;
+  top: 20px
 }
 
 #active > *:before {
   content: attr(id) ": "
-}
-
-#pressers {
-  margin: 2em
 }

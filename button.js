@@ -24,7 +24,27 @@ var
     test: null
     , debug: 0 //active user count debug
   },
+  View = {
+    get w() {return window.innerWidth - 40},
+    get h() {return window.innerHeight - 40}
+  },
   init = function () {
+    
+    var chart = d3.select("#pressers")
+      .attr("width", View.w)
+      .attr("height", View.h);
+    chart.selectAll("rect")
+      .data(Data.tots)
+      .enter()
+      .append("rect");
+    chart.selectAll("text")
+      .data(Data.tots)
+      .enter()
+      .append("text")
+      .attr("text-anchor", "middle")
+      .attr("font-family", "sans-serif")
+      .attr("fill", "white")
+    
     var
       prev = {},
       pel = document.getElementById("pressers"),
@@ -97,22 +117,43 @@ var
             np: parseInt(pct.payload.participants_text.replace(/[^0-9]/,'')),
             ts: pct.payload.seconds_left
           },
-          el = document.createElement("div"),
           ts, dp;
-        el.innerText = curr.ts;
         if (Object.keys(prev).length > 0) {
           if (curr.np == prev.np) {
-            pel.replaceChild(el, pel.lastChild)
           } else {
-            ts = parseInt(pel.lastChild.innerText), dp = curr.np - prev.np;
-            if (pel.childElementCount > 0) Data.raw.push([ts, dp]);
+            Data.raw.push([ts = Data.last, dp = curr.np - prev.np]);
             Data.tots[ts] += dp;
-            pel.lastChild.innerText += " " + dp;
-            pel.appendChild(el);
           }
-        } else {
-          pel.appendChild(el)
         }
+        
+        chart
+          .attr("width", View.w)
+          .attr("height", View.h);
+        var unit = View.h / (Math.max.apply(null, Data.tots) || 1);
+        chart.selectAll("rect")
+          .data(Data.tots)
+          .transition()
+          .attr("x", function (d, i) {return View.w - (i + 1) * View.w / 61})
+          .attr("y", function (d) {return View.h - d * unit})
+          .attr("width", View.w/61 - 1)
+          .attr("height", function (d) {return d * unit})
+          .attr("style", function(d, i) {
+            return "fill:" + [ "black", "red", "orange", "yellow", "green", "blue", "purple" ][Math.floor((i+8)/10)]
+          });
+        chart.selectAll("text")
+          .data(Data.tots)
+          .transition()
+          .text(function (d) { return d })
+          .attr("font-size", Math.floor(View.w / 122) + "px")
+          .attr("fill", function (d) {
+            return d * unit > View.w * 5/366 ? "white" : "black"
+          })
+          .attr("x", function (d, i) {return View.w - (i + .5) * View.w / 61 - .5})
+          .attr("y", function (d) {
+            var base = View.h - d * View.h / (Math.max.apply(null, Data.tots) || 1) + Math.floor(View.w * 2/183);
+            return d * unit > View.w * 5/366 || !d ? base : base - Math.floor(View.w * 5/366)
+          });
+        
         prev = curr;
         Data.last = curr.ts
       },
