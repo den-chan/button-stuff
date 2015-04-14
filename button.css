@@ -10,6 +10,14 @@ html, body {
   overflow: hidden
 }
 
+svg text,
+#follows rect {
+  pointer-events: none
+}
+#follows rect {
+  mask: url(#mask-stripe)
+}
+
 #chart {
   margin: 20px
 }

@@ -31,7 +31,33 @@ init = function () {
     View = {
       get w() {return window.innerWidth - 40},
       get h() {return window.innerHeight - 40},
-      nbars: 60
+      nbars: 60,
+      get pressh() {return this.h - this.w / 2 / this.nbars},
+      get unit() { return this.pressh / (Math.max.apply(null, Data.tots) || 1) },
+      mbar: null
+    },
+    Util = {
+      color: function (i) {
+        return [ "#888", "#e50000", "#e59500", "#e5d900", "#02be01", "#0083c7", "#820080" ][Math.floor((i+9)/10)]
+      },
+      hexrgb: function (hex, rgb) {
+        (rgb = /^#?([a-f\d])([a-f\d])([a-f\d])$/i.exec(hex) || /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)).shift();
+        return rgb.map(function (i) {return i[1] ? parseInt(i, 16) : parseInt(i + i, 16)})
+      },
+      rgbhex: function (rgb) {
+        return "#" + rgb.map(function(a) {
+          var b = a.toString(16);
+          return b[1] ? b : "0" + b
+        }).join("")
+      },
+      //Use w3 colour brightness guideline to choose contrasting text colour
+      ccon: function (r, g, b) { return (((r*299)+(g*587)+(b*114))/1000 >= 128) ? "black" : "white" },
+      fade: function(hex, amt) {
+        return this.rgbhex(this.hexrgb(hex).map(function(v) {return v + Math.floor((amt>1 ? 1 : amt<0 ? 0 : typeof amt !== "number" ? 0.5 : amt) * (255-v))}))
+      },
+      darken: function(hex, amt) {
+        return this.rgbhex(this.hexrgb(hex).map(function(v) {return Math.floor((amt>1 ? 0 : amt<0 ? 1 : typeof amt !== "number" ? 0.5 : 1 - amt) * v)}))
+      }
     };
   
   //Initialise chart
@@ -63,29 +89,89 @@ init = function () {
   View.pressers = View.chart.select("#pressers")
     .attr("width", View.w)
     .attr("height", View.h - View.w / 2 / View.nbars);
-  View.pressers.selectAll("rect")
-    .data(Data.tots.slice(0, 60))
+  View.pressers.append("g")
+    .attr("id", "totals");
+  View.totals = View.pressers.select("#totals");
+  View.totals.selectAll("rect")
+    .data(Data.tots.slice(1, 61))
     .enter()
-    .append("rect");
-  View.pressers
-    .append("g")
+    .append("rect")
+    .attr("fill", function(d, i) { return Util.color(i) })
+    .on("mouseover", function (d0, i0) {
+      View.mbar = i0 + 1;
+      View.totals.selectAll("rect")
+        .attr("fill", function (d, i) {return Util.fade(Util.color(i))});
+      d3.select(this)
+        .attr("fill", Util.color(i0));
+      View.totals.select("g#count").selectAll("text")
+        .attr("fill", function (d, i) {return !d || i != i0 ? "transparent" : d * View.unit > View.w * 5/6 / View.nbars ? Util.ccon.apply(null, Util.hexrgb(Util.color(i))) : "black"});
+      View.follows.selectAll("rect")
+        .data(Data.foll[View.mbar].slice(1, 61))
+        .attr("x", function (d, i) {return View.w - (i + 1) * View.w / View.nbars})
+        .attr("y", function (d) {return View.pressh - d * View.unit})
+        .attr("width", View.w/View.nbars - 1)
+        .attr("height", function (d) {return d * View.unit})
+        .attr("fill", function(d, i) { return Util.darken(Util.color(i), i == i0 ? .5 : .2) });
+      View.follows.selectAll("text")
+        .data(Data.foll[View.mbar].slice(1, 61))
+        .text(function (d) { return d })
+        .attr("font-size", Math.floor(View.w / 2 / View.nbars) + "px")
+        .attr("fill", function (d, i) {
+          return !d ? "transparent" : Util.ccon.apply(null, Util.hexrgb(Util.darken(Util.color(i)), 1 - (1 - (i == i0 ? .5 : .2) / (d * View.unit > View.w * 5/6 / View.nbars ? 1 : 2))))
+        })
+        .attr("x", function (d, i) {return View.w - (i + .5) * View.w / View.nbars - .5})
+        .attr("y", function (d) {
+          var base = View.pressh - d * View.unit + View.w * 2/3 / View.nbars;
+          return !d || d * View.unit > View.w * 5/6 / View.nbars ? base : base - View.w * 5/6 / View.nbars
+        });
+    })
+    .on("mouseout", function (d0, i0) {
+      View.mbar = null;
+      View.totals.selectAll("rect")
+        .attr("fill", function (d, i) {return Util.color(i)});
+      View.totals.select("g#count").selectAll("text")
+        .attr("fill", function (d, i) {
+          return !d ? "transparent" : d * View.unit > View.w * 5/6 / View.nbars ? Util.ccon.apply(null, Util.hexrgb(Util.color(i))) : "black"
+        });
+      View.follows.selectAll("rect")
+        .data(Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0))
+        .attr("height", 0)
+      View.follows.selectAll("text")
+        .data(Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0))
+        .attr("y", View.h + 20)
+    });
+  View.totals.append("g")
     .attr("id", "count");
-  View.pressers.select("g#count").selectAll("text")
-    .data(Data.tots.slice(0, 60))
+  View.totals.select("g#count").selectAll("text")
+    .data(Data.tots.slice(1, 61))
     .enter()
     .append("text")
     .attr("text-anchor", "middle")
     .attr("font-family", "sans-serif")
     .attr("fill", "white");
-  View.pressers
-    .append("g")
+  View.totals.append("g")
     .attr("id", "label");
-  View.pressers.select("g#label").selectAll("text")
-    .data(Data.tots.slice(0, 60))
+  View.totals.select("g#label").selectAll("text")
+    .data(Data.tots.slice(1, 61))
+    .enter()
+    .append("text")
+    .attr("text-anchor", "middle")
+    .attr("font-family", "sans-serif");
+  View.pressers.append("g")
+    .attr("id", "follows");
+  View.follows = View.pressers.select("#follows");
+  View.follows.selectAll("rect")
+    .data(Data.tots.slice(1, 61))
+    .enter()
+    .append("rect");
+  View.follows.selectAll("text")
+    .data(Data.tots.slice(1, 61))
     .enter()
     .append("text")
     .attr("text-anchor", "middle")
     .attr("font-family", "sans-serif")
+    .attr("fill", "white");
+    
 
   var
     //Ajax call to r/thebutton
@@ -161,19 +247,7 @@ init = function () {
         if (Data.raw.length > 1) Data.foll[Data.raw[Data.raw.length - 2][0]][ts] += dp
       }
 
-      //Render chart
-      var
-        color = function (i) {
-          return [ "#888", "#e50000", "#e59500", "#e5d900", "#02be01", "#0083c7", "#820080" ][Math.floor((i+9)/10)]
-        },
-        hexrgb = function (hex, rgb) {
-          (rgb = /^#?([a-f\d])([a-f\d])([a-f\d])$/i.exec(hex) || /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)).shift();
-          return rgb.map(function (i) {return i[1] ? parseInt(i, 16) : parseInt(i + i, 16)})
-        },
-        //Use w3 colour brightness guideline to choose contrasting text colour
-        ccon = function (r, g, b) { return (((r*299)+(g*587)+(b*114))/1000 >= 128) ? "black" : "white" },
-        pressh = View.h - View.w / 2 / View.nbars,
-        unit = pressh / (Math.max.apply(null, Data.tots) || 1);
+      //Render chart    
       View.chart = d3.select("#chart")
         .attr("width", View.w)
         .attr("height", View.h + View.w / 6 / View.nbars);
@@ -182,48 +256,71 @@ init = function () {
           .transition()
           .duration(0)
           .attr("width", 0)
-          .attr("height", pressh)
+          .attr("height", View.pressh)
           .attr("style", "fill: #820080; fill-opacity: .2")
         d3.timer.flush()
       }
       View.timer.selectAll("rect")
         .data([curr.ts])
-        .attr("style", function (d) {return "fill: " + color(d) + "; fill-opacity: .2"})
-        .attr("height", pressh)
+        .attr("style", function (d) {return "fill: " + Util.color(d) + "; fill-opacity: .2"})
+        .attr("height", View.pressh)
         .transition()
         .duration(1000)
         .ease("linear")
         .attr("width", function (d) {return View.w - (d - 1) * View.w / View.nbars});
       View.pressers
         .attr("width", View.w)
-        .attr("height", pressh);
-      View.pressers.selectAll("rect")
-        .data(Data.tots.slice(0, 60))
+        .attr("height", View.pressh);
+      View.totals.selectAll("rect")
+        .data(Data.tots.slice(1, 61))
         .transition()
         .attr("x", function (d, i) {return View.w - (i + 1) * View.w / View.nbars})
-        .attr("y", function (d) {return pressh - d * unit})
+        .attr("y", function (d) {return View.pressh - d * View.unit})
         .attr("width", View.w/View.nbars - 1)
-        .attr("height", function (d) {return d * unit})
-        .attr("style", function(d, i) { return "fill: " + color(i) });        
-      View.pressers.select("g#count").selectAll("text")
-        .data(Data.tots.slice(0, 60))
+        .attr("height", function (d) {return d * View.unit});        
+      View.totals.select("g#count").selectAll("text")
+        .data(Data.tots.slice(1, 61))
         .transition()
         .text(function (d) { return d })
         .attr("font-size", Math.floor(View.w / 2 / View.nbars) + "px")
         .attr("fill", function (d, i) {
-          return !d ? "white" : d * unit > View.w * 5/6 / View.nbars ? ccon.apply(null, hexrgb(color(i))) : "black"
+          return !d || View.mbar !== null && i != View.mbar - 1 ? "transparent" : d * View.unit > View.w * 5/6 / View.nbars ? Util.ccon.apply(null, Util.hexrgb(Util.color(i))) : "black"
         })
         .attr("x", function (d, i) {return View.w - (i + .5) * View.w / View.nbars - .5})
         .attr("y", function (d) {
-          var base = pressh - d * pressh / (Math.max.apply(null, Data.tots) || 1) + View.w * 2/3 / View.nbars;
-          return !d || d * unit > View.w * 5/6 / View.nbars ? base : base - View.w * 5/6 / View.nbars
+          var base = View.pressh - d * View.unit + View.w * 2/3 / View.nbars;
+          return !d || d * View.unit > View.w * 5/6 / View.nbars ? base : base - View.w * 5/6 / View.nbars
         });
-      View.pressers.select("g#label").selectAll("text")
-        .data(Data.tots.slice(0, 60))
+      View.totals.select("g#label").selectAll("text")
+        .data(Data.tots.slice(1, 61))
         .text(function (d, i) { return i + 1 })
         .attr("font-size", Math.floor(View.w / 2 / View.nbars) + "px")
         .attr("x", function (d, i) {return View.w - (i + .5) * View.w / View.nbars - .5})
-        .attr("y", pressh + View.w * 2/3 / View.nbars)
+        .attr("y", View.pressh + View.w * 2/3 / View.nbars);
+      View.follows.selectAll("rect")
+        .data(
+          View.mbar === null ?
+            Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0) :
+            Data.foll[View.mbar].slice(1, 61)
+        )
+        .transition()
+        .attr("y", function (d) {return View.pressh - d * View.unit})
+        .attr("height", function (d) {return d * View.unit})
+      View.follows.selectAll("text")
+        .data(
+          View.mbar === null ?
+            Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0) :
+            Data.foll[View.mbar].slice(1, 61)
+        )
+        .transition()
+        .text(function (d) { return d })
+        .attr("y", function (d) {
+          var base = View.pressh - d * View.unit + View.w * 2/3 / View.nbars;
+          return View.mbar === null ? View.h + 20 : !d || d * View.unit > View.w * 5/6 / View.nbars ? base : base - View.w * 5/6 / View.nbars
+        })
+        .attr("fill", function (d, i) {
+          return !d ? "transparent" : Util.ccon.apply(null, Util.hexrgb(Util.darken(Util.color(i)), 1 - (1 - (i == View.mbar - 1 ? .5 : .2) / (d * View.unit > View.w * 5/6 / View.nbars ? 1 : 2))))
+        });
 
       prev = curr;
       Data.last = curr.ts
