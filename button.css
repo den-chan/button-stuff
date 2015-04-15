@@ -10,10 +10,15 @@ html, body {
   overflow: hidden
 }
 
-svg text,
+:not(#ltip) > text,
 #follows rect {
   pointer-events: none
 }
+
+#ltip text {
+  cursor: pointer
+}
+
 #follows rect {
   mask: url(#mask-stripe)
 }

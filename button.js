@@ -1,16 +1,29 @@
 init = function () {
-  var utypes = [
-    "users-online",
-    "flair-no-press",
-    "flair-press-6",
-    "flair-press-5",
-    "flair-press-4",
-    "flair-press-3",
-    "flair-press-2",
-    "flair-press-1",
-    "flair-cant-press",
-    "no-flair"
-  ];
+  var
+    utypes = [
+      "users-online",
+      "flair-no-press",
+      "flair-press-6",
+      "flair-press-5",
+      "flair-press-4",
+      "flair-press-3",
+      "flair-press-2",
+      "flair-press-1",
+      "flair-cant-press",
+      "no-flair"
+    ],
+    ucolors = [
+      "#000",
+      "#888",
+      "#820080",
+      "#0083c7",
+      "#02be01",
+      "#e5d900",
+      "#e59500",
+      "#e50000",
+      "#e4e4e4",
+      "#fff"
+    ];
   Data = { //TODO: timestamping
     raw: new Array,
     tots: Array.apply(null, Array(61)).map(Number.prototype.valueOf, 0),
@@ -61,12 +74,94 @@ init = function () {
     };
   
   //Initialise chart
+  //events
+  var
+    trmr = function (d0, i0) {
+      View.mbar = i0 + 1;
+      View.totals.selectAll("rect")
+        .attr("fill", function (d, i) {return Util.fade(Util.color(i))});
+      d3.select(this)
+        .attr("fill", Util.color(i0));
+      View.totals.select("g#count").selectAll("text")
+        .attr("fill", function (d, i) {return !d || i != i0 ? "transparent" : d * View.unit > View.w * 5/6 / View.nbars ? Util.ccon.apply(null, Util.hexrgb(Util.color(i))) : "black"});
+      View.follows.selectAll("rect")
+        .data(Data.foll[View.mbar].slice(1, 61))
+        .attr("x", function (d, i) {return View.w - (i + 1) * View.w / View.nbars})
+        .attr("y", function (d) {return View.pressh - d * View.unit})
+        .attr("width", View.w/View.nbars - 1)
+        .attr("height", function (d) {return d * View.unit});
+      View.follows.selectAll("text")
+        .data(Data.foll[View.mbar].slice(1, 61))
+        .text(function (d) { return d })
+        .attr("font-size", Math.floor(View.w / 2 / View.nbars) + "px")
+        .attr("fill", function (d, i) {
+          var b = Util.color(i);
+          b = i == i0 ? b : b = Util.fade(b);
+          b = d * View.unit > View.w * 5/6 / View.nbars ? b = Util.darken(b, .4) : b;
+          return !d ? "transparent" : Util.ccon.apply( null, Util.hexrgb(b) )
+        })
+        .attr("x", function (d, i) {return View.w - (i + .5) * View.w / View.nbars - .5})
+        .attr("y", function (d) {
+          var base = View.pressh - d * View.unit + View.w * 2/3 / View.nbars;
+          return !d || d * View.unit > View.w * 5/6 / View.nbars ? base : base - View.w * 5/6 / View.nbars
+        });
+    },
+    trmt = function (d0, i0) {
+      View.mbar = null;
+      View.totals.selectAll("rect")
+        .attr("fill", function (d, i) {return Util.color(i)});
+      View.totals.select("g#count").selectAll("text")
+        .attr("fill", function (d, i) {
+          return !d ? "transparent" : d * View.unit > View.w * 5/6 / View.nbars ? Util.ccon.apply(null, Util.hexrgb(Util.color(i))) : "black"
+        });
+      View.follows.selectAll("rect")
+        .data(Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0))
+        .attr("height", 0)
+      View.follows.selectAll("text")
+        .data(Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0))
+        .attr("y", View.h + 20)
+    },
+    lcmr = function (d0, i0) {
+      var self = this;
+      View.legend.selectAll("circle")
+        .data(ucolors)
+        .attr("fill", function (d) { return self === this ? d : Util.fade(d, .7) });
+      View.legend.select("g#ltip").selectAll("text")
+        .text(function (d, i) { return utypes[i0] });
+      View.legend.select("g#pcount").selectAll("text")
+        .filter(function (d, i) { return i0 == 0 ? i == 6 : i0 != 1 && i == 7 - i0 })
+        .attr("display", "inline")
+    },
+    lcmt = function (d0, i0) {
+      View.legend.selectAll("circle")
+        .data(ucolors)
+        .attr("fill", function (d) { return d });
+      View.legend.select("g#ltip").selectAll("text")
+        .text(Array(16).join("\u00a0"));
+      View.legend.select("g#pcount").selectAll("text")
+        .filter(function (d, i) { return i0 == 0 ? i == 6 : i0 != 1 && i == 7 - i0 })
+        .attr("display", "none")
+    },
+    ltmr = function () {
+      d3.select(this)
+        .text("change chart");
+      View.legend.select("g#pcount").selectAll("text")
+        .attr("display", "inline")
+    },
+    ltmt = function () {
+      d3.select(this)
+        .text(Array(16).join("\u00a0"));
+      View.legend.select("g#pcount").selectAll("text")
+        .attr("display", "none")
+    };
+  
+  //components
   View.chart = d3.select("#chart")
     .attr("width", View.w)
     .attr("height", View.h + View.w / 6 / View.nbars);
-  View.chart.append("g")
+  
+  View.timer = View.chart.append("g")
     .attr("id", "timer");
-  View.timer = View.chart.select("#timer");
   View.timer.selectAll("text")
     .data(["?"])
     .enter()
@@ -84,62 +179,21 @@ init = function () {
     .append("rect")
     .attr("x", 0)
     .attr("y", 0)
-  View.chart.append("g")
-    .attr("id", "pressers");
-  View.pressers = View.chart.select("#pressers")
+  
+  View.pressers = View.chart.append("g")
+    .attr("id", "pressers")
     .attr("width", View.w)
     .attr("height", View.h - View.w / 2 / View.nbars);
-  View.pressers.append("g")
+  
+  View.totals = View.pressers.append("g")
     .attr("id", "totals");
-  View.totals = View.pressers.select("#totals");
   View.totals.selectAll("rect")
     .data(Data.tots.slice(1, 61))
     .enter()
     .append("rect")
     .attr("fill", function(d, i) { return Util.color(i) })
-    .on("mouseover", function (d0, i0) {
-      View.mbar = i0 + 1;
-      View.totals.selectAll("rect")
-        .attr("fill", function (d, i) {return Util.fade(Util.color(i))});
-      d3.select(this)
-        .attr("fill", Util.color(i0));
-      View.totals.select("g#count").selectAll("text")
-        .attr("fill", function (d, i) {return !d || i != i0 ? "transparent" : d * View.unit > View.w * 5/6 / View.nbars ? Util.ccon.apply(null, Util.hexrgb(Util.color(i))) : "black"});
-      View.follows.selectAll("rect")
-        .data(Data.foll[View.mbar].slice(1, 61))
-        .attr("x", function (d, i) {return View.w - (i + 1) * View.w / View.nbars})
-        .attr("y", function (d) {return View.pressh - d * View.unit})
-        .attr("width", View.w/View.nbars - 1)
-        .attr("height", function (d) {return d * View.unit})
-        .attr("fill", function(d, i) { return Util.darken(Util.color(i), i == i0 ? .5 : .2) });
-      View.follows.selectAll("text")
-        .data(Data.foll[View.mbar].slice(1, 61))
-        .text(function (d) { return d })
-        .attr("font-size", Math.floor(View.w / 2 / View.nbars) + "px")
-        .attr("fill", function (d, i) {
-          return !d ? "transparent" : Util.ccon.apply(null, Util.hexrgb(Util.darken(Util.color(i)), 1 - (1 - (i == i0 ? .5 : .2) / (d * View.unit > View.w * 5/6 / View.nbars ? 1 : 2))))
-        })
-        .attr("x", function (d, i) {return View.w - (i + .5) * View.w / View.nbars - .5})
-        .attr("y", function (d) {
-          var base = View.pressh - d * View.unit + View.w * 2/3 / View.nbars;
-          return !d || d * View.unit > View.w * 5/6 / View.nbars ? base : base - View.w * 5/6 / View.nbars
-        });
-    })
-    .on("mouseout", function (d0, i0) {
-      View.mbar = null;
-      View.totals.selectAll("rect")
-        .attr("fill", function (d, i) {return Util.color(i)});
-      View.totals.select("g#count").selectAll("text")
-        .attr("fill", function (d, i) {
-          return !d ? "transparent" : d * View.unit > View.w * 5/6 / View.nbars ? Util.ccon.apply(null, Util.hexrgb(Util.color(i))) : "black"
-        });
-      View.follows.selectAll("rect")
-        .data(Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0))
-        .attr("height", 0)
-      View.follows.selectAll("text")
-        .data(Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0))
-        .attr("y", View.h + 20)
-    });
+    .on("mouseover", trmr)
+    .on("mouseout", trmt);
   View.totals.append("g")
     .attr("id", "count");
   View.totals.select("g#count").selectAll("text")
@@ -157,13 +211,15 @@ init = function () {
     .append("text")
     .attr("text-anchor", "middle")
     .attr("font-family", "sans-serif");
-  View.pressers.append("g")
+  
+  View.follows = View.pressers.append("g")
     .attr("id", "follows");
-  View.follows = View.pressers.select("#follows");
   View.follows.selectAll("rect")
     .data(Data.tots.slice(1, 61))
     .enter()
-    .append("rect");
+    .append("rect")
+    .attr("fill-opacity", .4)
+    .attr("fill", "black");
   View.follows.selectAll("text")
     .data(Data.tots.slice(1, 61))
     .enter()
@@ -171,7 +227,58 @@ init = function () {
     .attr("text-anchor", "middle")
     .attr("font-family", "sans-serif")
     .attr("fill", "white");
-    
+  
+  View.legend = View.chart.append("g")
+    .attr("id", "legend");
+  View.legend.selectAll("circle")
+    .data(ucolors)
+    .enter()
+    .append("circle")
+    .attr("r", 7.5)
+    .attr("cx", View.w - 60)
+    .attr("cy", function (d, i) { return 120 + 20 * i })
+    .attr("fill", function (d) { return d })
+    .on("mouseover", lcmr)
+    .on("mouseout", lcmt);
+  View.legend.append("g")
+    .attr("id", "acount");
+  View.legend.select("g#acount").selectAll("text")
+    .data([0,0,0,0,0,0,0,0,0,0])
+    .enter()
+    .append("text")
+    .attr("alignment-baseline", "central")
+    .attr("font-family", "sans-serif")
+    .attr("font-size", "12px")
+    .attr("x", View.w - 45)
+    .attr("y", function (d, i) { return 120 + 20 * i });
+  View.legend.append("g")
+    .attr("id", "pcount");
+  View.legend.select("g#pcount").selectAll("text")
+    .data([0,0,0,0,0,0,0])
+    .enter()
+    .append("text")
+    .attr("text-anchor", "end")
+    .attr("alignment-baseline", "central")
+    .attr("font-family", "sans-serif")
+    .attr("font-size", "12px")
+    .attr("x", View.w - 75)
+    .attr("y", function (d, i) { return i == 6 ? 120 : 260 - 20 * i })
+    .attr("fill", function (d, i) { return Util.darken(ucolors[i == 6 ? 0 : 7 - i]) })
+    .attr("display", "none");
+  View.legend.append("g")
+    .attr("id", "ltip");
+  View.legend.select("g#ltip")
+    .append("text")
+    .attr("text-anchor", "middle")
+    .attr("alignment-baseline", "middle")
+    .attr("font-family", "sans-serif")
+    .attr("font-size", "12px")
+    .attr("x", View.w - 60)
+    .attr("y", 320)
+    .text(Array(16).join("\u00a0"))
+    .on("mouseover", ltmr)
+    .on("mouseout", ltmt);
+  
 
   var
     //Ajax call to r/thebutton
@@ -251,6 +358,7 @@ init = function () {
       View.chart = d3.select("#chart")
         .attr("width", View.w)
         .attr("height", View.h + View.w / 6 / View.nbars);
+      
       if (curr.ts >= prev.ts) {
         View.timer.selectAll("rect")
           .transition()
@@ -262,12 +370,13 @@ init = function () {
       }
       View.timer.selectAll("rect")
         .data([curr.ts])
-        .attr("style", function (d) {return "fill: " + Util.color(d) + "; fill-opacity: .2"})
+        .attr("style", function (d) {return "fill: " + Util.color(d - 1) + "; fill-opacity: .2"})
         .attr("height", View.pressh)
         .transition()
         .duration(1000)
         .ease("linear")
         .attr("width", function (d) {return View.w - (d - 1) * View.w / View.nbars});
+      
       View.pressers
         .attr("width", View.w)
         .attr("height", View.pressh);
@@ -297,6 +406,7 @@ init = function () {
         .attr("font-size", Math.floor(View.w / 2 / View.nbars) + "px")
         .attr("x", function (d, i) {return View.w - (i + .5) * View.w / View.nbars - .5})
         .attr("y", View.pressh + View.w * 2/3 / View.nbars);
+      
       View.follows.selectAll("rect")
         .data(
           View.mbar === null ?
@@ -305,22 +415,32 @@ init = function () {
         )
         .transition()
         .attr("y", function (d) {return View.pressh - d * View.unit})
-        .attr("height", function (d) {return d * View.unit})
+        .attr("height", function (d) {return d * View.unit});
       View.follows.selectAll("text")
         .data(
           View.mbar === null ?
             Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0) :
             Data.foll[View.mbar].slice(1, 61)
         )
+        .attr("fill", function (d, i) {
+          var b = Util.color(i);
+          b = i == View.mbar - 1 ? b : b = Util.fade(b);
+          b = d * View.unit > View.w * 5/6 / View.nbars ? b = Util.darken(b, .4) : b;
+          return !d ? "transparent" : Util.ccon.apply( null, Util.hexrgb(b) )
+        })
         .transition()
         .text(function (d) { return d })
         .attr("y", function (d) {
           var base = View.pressh - d * View.unit + View.w * 2/3 / View.nbars;
           return View.mbar === null ? View.h + 20 : !d || d * View.unit > View.w * 5/6 / View.nbars ? base : base - View.w * 5/6 / View.nbars
-        })
-        .attr("fill", function (d, i) {
-          return !d ? "transparent" : Util.ccon.apply(null, Util.hexrgb(Util.darken(Util.color(i)), 1 - (1 - (i == View.mbar - 1 ? .5 : .2) / (d * View.unit > View.w * 5/6 / View.nbars ? 1 : 2))))
         });
+      
+      var sum = function (a, b) { return a + b };
+      var subtots = [0,1,2,3,4,5].map(function (a) {return Data.tots.slice(a*10+2, a*10+12).reduce(sum)});
+      subtots.push(subtots.reduce(sum));
+      View.legend.select("g#pcount").selectAll("text")
+        .data(subtots)
+        .text(function (d, i) { return (!subtots[6] || i == 6 ? "" : "(" + (100 * d / subtots[6]).toFixed(2) + "%) ") + d });
 
       prev = curr;
       Data.last = curr.ts
@@ -339,15 +459,17 @@ init = function () {
 
     //Update active users data
     active = function (resp) {
-      for (var i = 0, r, rbtnnew = []; i < 8; i++) {
+      for (var i = 0, r, rbtnnew = []; i < 9; i++) {
         rbtnnew.push(Data.rbtn[utypes[i]] = parseInt(
           (new RegExp("(?:" + utypes[i] + ".{" + (i ? 11 : 94) + "})([0-9,]+)").exec(resp)||[,"0"])[1]
             .replace(/[^0-9]/,'')
         ))
-        r = i ? r - rbtnnew[i] : rbtnnew[i];
-        document.getElementById(utypes[i]).innerText = rbtnnew[i]
+        r = i ? r - rbtnnew[i] : rbtnnew[i]
       }
-      rbtnnew.push(document.getElementById("no-flair").innerText = Data.rbtn["no-flair"] = r);
+      rbtnnew.push(Data.rbtn["no-flair"] = r);
+      View.legend.select("g#acount").selectAll("text")
+        .data(rbtnnew)
+        .text(function (d) { return d });
       switch (Data.araw.length != 0) {
         case true: if (arawcomp(rbtnnew, Data.araw[Data.araw.length - 1])) break
         default: Data.araw.push(rbtnnew)
