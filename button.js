@@ -47,8 +47,10 @@ init = function () {
       nbars: 60,
       get pressh() {return this.h - this.w / 2 / this.nbars},
       get unit() { return this.pressh / (Math.max.apply(null, Data.tots) || 1) },
-      mbar: null
-    },
+      mbar: null,
+      charts: ["timeseries", "aggregate"],//["aggregate", "timeseries"],
+      munit: 20
+    };
     Util = {
       color: function (i) {
         return [ "#888", "#e50000", "#e59500", "#e5d900", "#02be01", "#0083c7", "#820080" ][Math.floor((i+9)/10)]
@@ -70,6 +72,12 @@ init = function () {
       },
       darken: function(hex, amt) {
         return this.rgbhex(this.hexrgb(hex).map(function(v) {return Math.floor((amt>1 ? 0 : amt<0 ? 1 : typeof amt !== "number" ? 0.5 : 1 - amt) * v)}))
+      },
+      op: function (r, g, b, a) { return [r, g, b].map(function (c) {return Math.floor((1 - a)*c + 255*a)}) },
+      opmix: function (c1, c2, a) {
+        return this.hexrgb(c1).map(function(c, i) {
+          return Math.floor( (1 - a)*Util.hexrgb(c2)[i] + a*((1 - a)*c + 255*a) )
+        })
       }
     };
   
@@ -130,7 +138,8 @@ init = function () {
         .text(function (d, i) { return utypes[i0] });
       View.legend.select("g#pcount").selectAll("text")
         .filter(function (d, i) { return i0 == 0 ? i == 6 : i0 != 1 && i == 7 - i0 })
-        .attr("display", "inline")
+        .attr("display", "inline");
+      lmr()
     },
     lcmt = function (d0, i0) {
       View.legend.selectAll("circle")
@@ -140,19 +149,58 @@ init = function () {
         .text(Array(16).join("\u00a0"));
       View.legend.select("g#pcount").selectAll("text")
         .filter(function (d, i) { return i0 == 0 ? i == 6 : i0 != 1 && i == 7 - i0 })
-        .attr("display", "none")
+        .attr("display", "none");
+      lmt()
     },
     ltmr = function () {
       d3.select(this)
         .text("change chart");
       View.legend.select("g#pcount").selectAll("text")
-        .attr("display", "inline")
+        .attr("display", "inline");
+      lmr()
     },
     ltmt = function () {
       d3.select(this)
         .text(Array(16).join("\u00a0"));
       View.legend.select("g#pcount").selectAll("text")
-        .attr("display", "none")
+        .attr("display", "none");
+      lmt()
+    }
+    ltc = function () {
+      var t = View.charts.shift();
+      View[t].attr("display", "none");
+      View[View.charts[0]].attr("display", "inline");
+      View.charts.push(t)
+    },
+    lmr = function () {
+      View.legend.selectAll("rect")
+        .attr("fill-opacity", .8);
+      View.timer.selectAll("rect")
+        .attr("fill-opacity", .8)
+    }, 
+    lmt = function () {
+      View.legend.selectAll("rect")
+        .attr("fill-opacity", .5);
+      View.timer.selectAll("rect")
+        .attr("fill-opacity", .5)
+    },
+    pe = function (d0, i0) {
+      var s = new Date(d0[2]).getSeconds();
+      d3.select(this).selectAll("rect")
+        .data(function (d, i) { return s > 60 - d0[0] || s == 0 ? [61 - d0[0]] : [61 - d0[0] - s, s] })
+        .enter()
+        .append("rect")
+        .attr("x", function (d, i) {return i ? 0 : View.w * ((s + d0[0] - 1) % 60) / 60})
+        .attr("y", function (d, i) {
+          return View.munit * (
+            i + Math.floor(( d0[2] - 1000*(61-d0[0]) ) / 60000)
+            - Math.floor(( Data.raw[0][2] - 1000*(61-Data.raw[0][0]) ) / 60000)
+          )
+        })
+        .attr("width", function(d, i) {return d * View.w/60 - 1})
+        .attr("height", View.munit - 1)
+        .attr("fill", Util.color(d0[0] - 1))
+        .attr("fill-opacity", .5)
     };
   
   //components
@@ -160,32 +208,20 @@ init = function () {
     .attr("width", View.w)
     .attr("height", View.h + View.w / 6 / View.nbars);
   
-  View.timer = View.chart.append("g")
-    .attr("id", "timer");
-  View.timer.selectAll("text")
-    .data(["?"])
-    .enter()
-    .append("text")
-    .attr("text-anchor", "end")
-    .attr("alignment-baseline", "middle")
-    .attr("font-family", "sans-serif")
-    .attr("font-size", "72px")
-    .attr("x", View.w)
-    .attr("y", 50)
-    .text("?");
-  View.timer.selectAll("rect")
+  View.aggregate = View.chart.append("g")
+    .attr("id", "aggregate")
+    .attr("width", View.w)
+    .attr("height", View.h - View.w / 2 / View.nbars);
+  View.aggregate.append("g")
+    .attr("id", "sandtimer");
+  View.aggregate.select("g#sandtimer").selectAll("rect")
     .data([60])
     .enter()
     .append("rect")
     .attr("x", 0)
-    .attr("y", 0)
+    .attr("y", 0);
   
-  View.pressers = View.chart.append("g")
-    .attr("id", "pressers")
-    .attr("width", View.w)
-    .attr("height", View.h - View.w / 2 / View.nbars);
-  
-  View.totals = View.pressers.append("g")
+  View.totals = View.aggregate.append("g")
     .attr("id", "totals");
   View.totals.selectAll("rect")
     .data(Data.tots.slice(1, 61))
@@ -212,7 +248,7 @@ init = function () {
     .attr("text-anchor", "middle")
     .attr("font-family", "sans-serif");
   
-  View.follows = View.pressers.append("g")
+  View.follows = View.aggregate.append("g")
     .attr("id", "follows");
   View.follows.selectAll("rect")
     .data(Data.tots.slice(1, 61))
@@ -228,15 +264,59 @@ init = function () {
     .attr("font-family", "sans-serif")
     .attr("fill", "white");
   
+  View.timeseries = View.chart.append("g")
+    .attr("id", "timeseries")
+    .attr("width", View.w)
+    .attr("height", View.h - View.w / 2 / View.nbars);
+  
+  View.presses = View.timeseries.append("g")
+    .attr("id", "presses");
+  View.presses.append("g")
+    .attr("id", "current");
+  View.presses.select("g#current").selectAll("rect")
+    .data([0,0])
+    .enter()
+    .append("rect");
+  
+  View.timer = View.chart.append("g")
+    .attr("id", "timer");
+  View.timer.append("rect")
+    .attr("x", View.w - 180)
+    .attr("y", 14)
+    .attr("width", 180)
+    .attr("height", 88)
+    .attr("fill", "white")
+    .attr("fill-opacity", .5)
+  View.timer.selectAll("text")
+    .data(["?"])
+    .enter()
+    .append("text")
+    .attr("text-anchor", "end")
+    .attr("alignment-baseline", "middle")
+    .attr("font-family", "sans-serif")
+    .attr("font-size", "72px")
+    .attr("x", View.w - 20)
+    .attr("y", 64)
+    .text("?");
+  
   View.legend = View.chart.append("g")
     .attr("id", "legend");
+  View.legend.append("rect")
+    .attr("x", View.w - 180)
+    .attr("y", 116)
+    .attr("width", 180)
+    .attr("height", 240)
+    .attr("fill", "white")
+    .attr("fill-opacity", .5)
+    .on("mouseover", lmr)
+    .on("mouseout", lmt);
   View.legend.selectAll("circle")
     .data(ucolors)
     .enter()
     .append("circle")
     .attr("r", 7.5)
-    .attr("cx", View.w - 60)
-    .attr("cy", function (d, i) { return 120 + 20 * i })
+    .attr("cx", View.w - 65)
+    .attr("cy", function (d, i) { return 140 + 20 * i })
     .attr("fill", function (d) { return d })
     .on("mouseover", lcmr)
     .on("mouseout", lcmt);
@@ -249,8 +329,8 @@ init = function () {
     .attr("alignment-baseline", "central")
     .attr("font-family", "sans-serif")
     .attr("font-size", "12px")
-    .attr("x", View.w - 45)
-    .attr("y", function (d, i) { return 120 + 20 * i });
+    .attr("x", View.w - 50)
+    .attr("y", function (d, i) { return 140 + 20 * i });
   View.legend.append("g")
     .attr("id", "pcount");
   View.legend.select("g#pcount").selectAll("text")
@@ -261,8 +341,8 @@ init = function () {
     .attr("alignment-baseline", "central")
     .attr("font-family", "sans-serif")
     .attr("font-size", "12px")
-    .attr("x", View.w - 75)
-    .attr("y", function (d, i) { return i == 6 ? 120 : 260 - 20 * i })
+    .attr("x", View.w - 80)
+    .attr("y", function (d, i) { return i == 6 ? 140 : 280 - 20 * i })
     .attr("fill", function (d, i) { return Util.darken(ucolors[i == 6 ? 0 : 7 - i]) })
     .attr("display", "none");
   View.legend.append("g")
@@ -273,11 +353,14 @@ init = function () {
     .attr("alignment-baseline", "middle")
     .attr("font-family", "sans-serif")
     .attr("font-size", "12px")
-    .attr("x", View.w - 60)
-    .attr("y", 320)
+    .attr("x", View.w - 65)
+    .attr("y", 340)
     .text(Array(16).join("\u00a0"))
     .on("mouseover", ltmr)
-    .on("mouseout", ltmt);
+    .on("mouseout", ltmt)
+    .on("click", ltc);
+  
+  View.charts.forEach(function (d, i) { !i || View[d].attr("display", "none") });
   
 
   var
@@ -341,99 +424,176 @@ init = function () {
     tick = function (e) {
       var pct = JSON.parse(e.data);
       if (pct.type != "ticking") return;
-      var 
+      var
+        dt = new Date(Date.UTC.apply(null, pct.payload.now_str.split("-").map(Number))),
         curr = {
-          dt: new Date(Date.UTC.apply(null, pct.payload.now_str.split("-").map(Number))),
+          dt: dt.setMonth(dt.getMonth() - 1),
           np: parseInt(pct.payload.participants_text.replace(/[^0-9]/,'')),
           ts: pct.payload.seconds_left
         },
         ts, dp;
       if (Object.keys(prev).length > 0 && curr.np != prev.np) {
-        Data.raw.push([ts = Data.last, dp = curr.np - prev.np]);
+        Data.raw.push([ts = Data.last, dp = curr.np - prev.np, curr.dt]);
         Data.tots[ts] += dp;
         if (Data.raw.length > 1) Data.foll[Data.raw[Data.raw.length - 2][0]][ts] += dp
       }
 
-      //Render chart    
+      //Render charts
       View.chart = d3.select("#chart")
         .attr("width", View.w)
         .attr("height", View.h + View.w / 6 / View.nbars);
       
-      if (curr.ts >= prev.ts) {
-        View.timer.selectAll("rect")
-          .transition()
-          .duration(0)
-          .attr("width", 0)
+      if (View.charts[0] == "aggregate") {
+        
+        //Aggregate chart
+        View.aggregate
+          .attr("width", View.w)
+          .attr("height", View.pressh);
+        
+        if (curr.ts >= prev.ts) {
+          View.aggregate.select("g#sandtimer").selectAll("rect")
+            .transition()
+            .duration(0)
+            .attr("width", 0)
+            .attr("height", View.pressh)
+            .attr("fill", "#820080")
+            .attr("fill-opacity", .2)
+          d3.timer.flush()
+        }
+        View.aggregate.select("g#sandtimer").selectAll("rect")
+          .data([curr.ts])
+          .attr("style", function (d) {return "fill: " + Util.color(d - 1) + "; fill-opacity: .2"})
           .attr("height", View.pressh)
-          .attr("style", "fill: #820080; fill-opacity: .2")
-        d3.timer.flush()
+          .transition()
+          .duration(1000)
+          .ease("linear")
+          .attr("width", function (d) {return View.w - (d - 1) * View.w / View.nbars});
+        
+        View.totals.selectAll("rect")
+          .data(Data.tots.slice(1, 61))
+          .transition()
+          .attr("x", function (d, i) {return View.w - (i + 1) * View.w / View.nbars})
+          .attr("y", function (d) {return View.pressh - d * View.unit})
+          .attr("width", View.w/View.nbars - 1)
+          .attr("height", function (d) {return d * View.unit});        
+        View.totals.select("g#count").selectAll("text")
+          .data(Data.tots.slice(1, 61))
+          .transition()
+          .text(function (d) { return d })
+          .attr("font-size", Math.floor(View.w / 2 / View.nbars) + "px")
+          .attr("fill", function (d, i) {
+            return !d || View.mbar !== null && i != View.mbar - 1 ? "transparent" : d * View.unit > View.w * 5/6 / View.nbars ? Util.ccon.apply(null, Util.hexrgb(Util.color(i))) : "black"
+          })
+          .attr("x", function (d, i) {return View.w - (i + .5) * View.w / View.nbars - .5})
+          .attr("y", function (d) {
+            var base = View.pressh - d * View.unit + View.w * 2/3 / View.nbars;
+            return !d || d * View.unit > View.w * 5/6 / View.nbars ? base : base - View.w * 5/6 / View.nbars
+          });
+        View.totals.select("g#label").selectAll("text")
+          .data(Data.tots.slice(1, 61))
+          .text(function (d, i) { return i + 1 })
+          .attr("font-size", Math.floor(View.w / 2 / View.nbars) + "px")
+          .attr("x", function (d, i) {return View.w - (i + .5) * View.w / View.nbars - .5})
+          .attr("y", View.pressh + View.w * 2/3 / View.nbars);
+
+        View.follows.selectAll("rect")
+          .data(
+            View.mbar === null ?
+              Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0) :
+              Data.foll[View.mbar].slice(1, 61)
+          )
+          .transition()
+          .attr("y", function (d) {return View.pressh - d * View.unit})
+          .attr("height", function (d) {return d * View.unit});
+        View.follows.selectAll("text")
+          .data(
+            View.mbar === null ?
+              Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0) :
+              Data.foll[View.mbar].slice(1, 61)
+          )
+          .attr("fill", function (d, i) {
+            var b = Util.color(i);
+            b = i == View.mbar - 1 ? b : b = Util.fade(b);
+            b = d * View.unit > View.w * 5/6 / View.nbars ? b = Util.darken(b, .4) : b;
+            return !d ? "transparent" : Util.ccon.apply( null, Util.hexrgb(b) )
+          })
+          .transition()
+          .text(function (d) { return d })
+          .attr("y", function (d) {
+            var base = View.pressh - d * View.unit + View.w * 2/3 / View.nbars;
+            return View.mbar === null ? View.h + 20 : !d || d * View.unit > View.w * 5/6 / View.nbars ? base : base - View.w * 5/6 / View.nbars
+          });
+        
+      } else if (View.charts[0] == "timeseries") {
+        
+        //Time-series chart
+        View.presses.selectAll("g.press")
+          .data(Data.raw)
+          .enter()
+          .append("g")
+          .attr("class", "press")
+          .each(pe);
+        View.presses.selectAll("text:last-of-type")
+          .each(function () {
+            this.parentNode.appendChild(this);
+            var t = View.presses.selectAll("text")[0].length;
+            if (t>1 && (new Date(Data.raw[t-1][2]).getSeconds() + Data.raw[t-1][0]) % 60 < new Date(Data.raw[t-2][2] + 1).getSeconds()) {
+              View.presses.selectAll("text:nth-last-of-type(2)").attr("fill", Util.ccon.apply(null, Util.opmix(Util.color(Data.raw[t-2][0] - 1),Util.color(Data.raw[t-1][0] - 1),.5)))
+            }
+          });
+        View.presses.selectAll("text")
+          .data(Data.raw)
+          .enter()
+          .append("text")
+          .text(function (d) { return d[0] })
+          .attr("x", function (d) { return View.w * (new Date(d[2]-1000).getSeconds() + .5) / 60 } )
+          .attr("y", function (d) {
+            return View.munit * (
+              Number(new Date(d[2]-1000).getSeconds() < 60 - d[0]) + .5 + Math.floor(( d[2] - 1000*(61-d[0]) ) / 60000)
+              - Math.floor(( Data.raw[0][2] - 1000*(61-Data.raw[0][0]) ) / 60000)
+            )
+          })
+          .attr("font-size", Math.max( Math.floor(Math.min( View.w / 120, View.munit / 2 )), 5) + "px")
+          .attr("alignment-baseline", "central")
+          .attr("text-anchor", "middle")
+          .attr("font-family", "sans-serif")
+          .attr("fill", function(d) {
+            return Util.ccon.apply(null, Util.op.apply(null, Util.hexrgb( Util.color(d[0] - 1) ).concat([.5])))
+          });
+        var
+          d0 = [curr.ts, curr.dt],
+          s = new Date(d0[1]).getSeconds();
+        if (curr.ts >= prev.ts) {
+          View.presses.select("g#current").selectAll("rect")
+            .transition()
+            .duration(0)
+            .attr("x", function (d, i) {return i ? 0 : View.w * ((s + d0[0]) % 60) / 60})
+            .attr("y", function (d, i) {
+              return View.munit * (
+                 !Data.raw.length ? i : i + Math.floor(( d0[1] - 1000*(61-d0[0]) ) / 60000)
+                - Math.floor(( Data.raw[0][2] - 1000*(61-Data.raw[0][0]) ) / 60000)
+              )
+            })
+            .attr("width", 0)
+            .attr("fill", "#820080")
+          d3.timer.flush()
+        }
+        View.presses.select("g#current").selectAll("rect")
+          .data(s > 60 - d0[0] ? [61 - d0[0], 0] : [60 - d0[0] - s, s + 1])
+          .attr("fill", Util.color(d0[0] - 1))
+          .transition()
+          .duration(1000)
+          .ease("linear")
+          .attr("x", function (d, i) {return i ? 0 : View.w * ((s + d0[0]) % 60) / 60})
+          .attr("y", function (d, i) {
+            return View.munit * (
+               !Data.raw.length ? i : i + Math.floor(( d0[1] - 1000*(61-d0[0]) ) / 60000)
+              - Math.floor(( Data.raw[0][2] - 1000*(61-Data.raw[0][0]) ) / 60000)
+            )
+          })
+          .attr("width", function(d, i) {return !i || d ? Math.max(d * View.w/60 - 1, 0) : 0})
+          .attr("height", View.munit - 1)
       }
-      View.timer.selectAll("rect")
-        .data([curr.ts])
-        .attr("style", function (d) {return "fill: " + Util.color(d - 1) + "; fill-opacity: .2"})
-        .attr("height", View.pressh)
-        .transition()
-        .duration(1000)
-        .ease("linear")
-        .attr("width", function (d) {return View.w - (d - 1) * View.w / View.nbars});
-      
-      View.pressers
-        .attr("width", View.w)
-        .attr("height", View.pressh);
-      View.totals.selectAll("rect")
-        .data(Data.tots.slice(1, 61))
-        .transition()
-        .attr("x", function (d, i) {return View.w - (i + 1) * View.w / View.nbars})
-        .attr("y", function (d) {return View.pressh - d * View.unit})
-        .attr("width", View.w/View.nbars - 1)
-        .attr("height", function (d) {return d * View.unit});        
-      View.totals.select("g#count").selectAll("text")
-        .data(Data.tots.slice(1, 61))
-        .transition()
-        .text(function (d) { return d })
-        .attr("font-size", Math.floor(View.w / 2 / View.nbars) + "px")
-        .attr("fill", function (d, i) {
-          return !d || View.mbar !== null && i != View.mbar - 1 ? "transparent" : d * View.unit > View.w * 5/6 / View.nbars ? Util.ccon.apply(null, Util.hexrgb(Util.color(i))) : "black"
-        })
-        .attr("x", function (d, i) {return View.w - (i + .5) * View.w / View.nbars - .5})
-        .attr("y", function (d) {
-          var base = View.pressh - d * View.unit + View.w * 2/3 / View.nbars;
-          return !d || d * View.unit > View.w * 5/6 / View.nbars ? base : base - View.w * 5/6 / View.nbars
-        });
-      View.totals.select("g#label").selectAll("text")
-        .data(Data.tots.slice(1, 61))
-        .text(function (d, i) { return i + 1 })
-        .attr("font-size", Math.floor(View.w / 2 / View.nbars) + "px")
-        .attr("x", function (d, i) {return View.w - (i + .5) * View.w / View.nbars - .5})
-        .attr("y", View.pressh + View.w * 2/3 / View.nbars);
-      
-      View.follows.selectAll("rect")
-        .data(
-          View.mbar === null ?
-            Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0) :
-            Data.foll[View.mbar].slice(1, 61)
-        )
-        .transition()
-        .attr("y", function (d) {return View.pressh - d * View.unit})
-        .attr("height", function (d) {return d * View.unit});
-      View.follows.selectAll("text")
-        .data(
-          View.mbar === null ?
-            Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0) :
-            Data.foll[View.mbar].slice(1, 61)
-        )
-        .attr("fill", function (d, i) {
-          var b = Util.color(i);
-          b = i == View.mbar - 1 ? b : b = Util.fade(b);
-          b = d * View.unit > View.w * 5/6 / View.nbars ? b = Util.darken(b, .4) : b;
-          return !d ? "transparent" : Util.ccon.apply( null, Util.hexrgb(b) )
-        })
-        .transition()
-        .text(function (d) { return d })
-        .attr("y", function (d) {
-          var base = View.pressh - d * View.unit + View.w * 2/3 / View.nbars;
-          return View.mbar === null ? View.h + 20 : !d || d * View.unit > View.w * 5/6 / View.nbars ? base : base - View.w * 5/6 / View.nbars
-        });
       
       var sum = function (a, b) { return a + b };
       var subtots = [0,1,2,3,4,5].map(function (a) {return Data.tots.slice(a*10+2, a*10+12).reduce(sum)});
@@ -453,7 +613,7 @@ init = function () {
         View.timer.selectAll("text")
           .data([(Data.last - Interval.dt[1]).toFixed(1)])
           .text(function (d) { return d })
-          .attr("x", View.w)
+          .attr("x", View.w - 20)
       }, 100))
     },
 
