@@ -1,5 +1,5 @@
 init = function () {
-  var
+  var //TODO: Create project-level object
     utypes = [
       "users-online",
       "flair-no-press",
@@ -45,13 +45,13 @@ init = function () {
       get w() {return window.innerWidth - 40},
       get h() {return window.innerHeight - 40},
       nbars: 60,
-      get pressh() {return this.h - this.w / 2 / this.nbars},
+      get pressh() {return this.h - this.w * 4/3 / this.nbars},
       get unit() { return this.pressh / (Math.max.apply(null, Data.tots) || 1) },
       mbar: null,
       charts: ["timeseries", "aggregate"],//["aggregate", "timeseries"],
       munit: 20
     };
-    Util = {
+    Util = { //TODO: colour object
       color: function (i) {
         return [ "#888", "#e50000", "#e59500", "#e5d900", "#02be01", "#0083c7", "#820080" ][Math.floor((i+9)/10)]
       },
@@ -83,19 +83,22 @@ init = function () {
   
   //Initialise chart
   //events
+  //TODO: View.events
   var
     trmr = function (d0, i0) {
       View.mbar = i0 + 1;
-      View.totals.selectAll("rect")
-        .attr("fill", function (d, i) {return Util.fade(Util.color(i))});
-      d3.select(this)
-        .attr("fill", Util.color(i0));
+      View.totals.select("g#bars").selectAll("rect")
+        .attr("fill", function (d, i) { return i == i0 ? Util.color(i0) : Util.fade(Util.color(i)) });
       View.totals.select("g#count").selectAll("text")
         .attr("fill", function (d, i) {return !d || i != i0 ? "transparent" : d * View.unit > View.w * 5/6 / View.nbars ? Util.ccon.apply(null, Util.hexrgb(Util.color(i))) : "black"});
+      View.totals.select("g#quantile").selectAll("rect")
+        .attr("fill", function (d, i) { return i == i0 ? Util.color(i0) : Util.fade(Util.color(i)) });
+      View.totals.select("g#quantile").selectAll("text")
+        .attr("fill", function (d, i) {return d && i == i0 ? Util.ccon.apply(null, Util.hexrgb(Util.color(i))) : "transparent"});
       View.follows.selectAll("rect")
         .data(Data.foll[View.mbar].slice(1, 61))
         .attr("x", function (d, i) {return View.w - (i + 1) * View.w / View.nbars})
-        .attr("y", function (d) {return View.pressh - d * View.unit})
+        .attr("y", function (d) {return View.pressh - d * View.unit + View.w * 5/6 / View.nbars})
         .attr("width", View.w/View.nbars - 1)
         .attr("height", function (d) {return d * View.unit});
       View.follows.selectAll("text")
@@ -110,20 +113,25 @@ init = function () {
         })
         .attr("x", function (d, i) {return View.w - (i + .5) * View.w / View.nbars - .5})
         .attr("y", function (d) {
-          var base = View.pressh - d * View.unit + View.w * 2/3 / View.nbars;
+          var base = View.pressh - d * View.unit + View.w * 3/2 / View.nbars;
           return !d || d * View.unit > View.w * 5/6 / View.nbars ? base : base - View.w * 5/6 / View.nbars
         });
     },
     trmt = function (d0, i0) {
       View.mbar = null;
-      View.totals.selectAll("rect")
+      View.totals.select("g#bars").selectAll("rect")
         .attr("fill", function (d, i) {return Util.color(i)});
       View.totals.select("g#count").selectAll("text")
         .attr("fill", function (d, i) {
           return !d ? "transparent" : d * View.unit > View.w * 5/6 / View.nbars ? Util.ccon.apply(null, Util.hexrgb(Util.color(i))) : "black"
         });
+      View.totals.select("g#quantile").selectAll("rect")
+        .attr("fill", function (d, i) { return Util.color(i) });
+      View.totals.select("g#quantile").selectAll("text")
+        .attr("fill", function (d, i) { return Util.ccon.apply(null, Util.hexrgb(Util.color(i))) });
       View.follows.selectAll("rect")
         .data(Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0))
+        .attr("y", View.pressh)
         .attr("height", 0)
       View.follows.selectAll("text")
         .data(Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0))
@@ -153,13 +161,29 @@ init = function () {
       lmt()
     },
     ltmr = function () {
+      View.legend.selectAll("rect")
+        .transition()
+        .attr("x", View.w - 180)
+        .attr("width", 180);
+      View.legend.select("g#ltip").selectAll("text")
+        .transition()
+        .attr("x", View.w - 65);
       d3.select(this)
         .text("change chart");
       View.legend.select("g#pcount").selectAll("text")
+        .transition()
+        .delay(250)
         .attr("display", "inline");
       lmr()
     },
     ltmt = function () {
+      View.legend.selectAll("rect")
+        .transition()
+        .attr("x", View.w - 100)
+        .attr("width", 100);
+      View.legend.select("g#ltip").selectAll("text")
+        .transition()
+        .attr("x", View.w - 50);
       d3.select(this)
         .text(Array(16).join("\u00a0"));
       View.legend.select("g#pcount").selectAll("text")
@@ -219,15 +243,17 @@ init = function () {
     .enter()
     .append("rect")
     .attr("x", 0)
-    .attr("y", 0);
+    .attr("y", View.w * 5/6 / View.nbars);
   
   View.totals = View.aggregate.append("g")
     .attr("id", "totals");
-  View.totals.selectAll("rect")
+  View.totals.append("g")
+    .attr("id", "bars")
+  View.totals.select("g#bars").selectAll("rect")
     .data(Data.tots.slice(1, 61))
     .enter()
     .append("rect")
-    .attr("fill", function(d, i) { return Util.color(i) })
+    .attr("fill", function (d, i) { return Util.color(i) })
     .on("mouseover", trmr)
     .on("mouseout", trmt);
   View.totals.append("g")
@@ -247,6 +273,27 @@ init = function () {
     .append("text")
     .attr("text-anchor", "middle")
     .attr("font-family", "sans-serif");
+  View.totals.append("g")
+    .attr("id", "quantile");
+  View.totals.select("g#quantile").selectAll("rect")
+    .data(Data.tots.slice(1, 61))
+    .enter()
+    .append("rect")
+    .attr("fill", function (d, i) { return Util.color(i) })
+    .attr("y", 0)
+    .attr("height", View.w * 5/6 / View.nbars - 1)
+    .on("mouseover", trmr)
+    .on("mouseout", trmt);
+  View.totals.select("g#quantile").selectAll("text")
+    .data(Data.tots.slice(1, 61))
+    .enter()
+    .append("text")
+    .attr("text-anchor", "middle")
+    .attr("alignment-baseline", "central")
+    .attr("font-family", "sans-serif")
+    .attr("font-size", Math.floor(View.w / 2 / View.nbars) + "px")
+    .attr("fill", function (d, i) { return Util.ccon.apply(null, Util.hexrgb(Util.color(i))) })
+    .attr("y", View.w * 5/12 / View.nbars);
   
   View.follows = View.aggregate.append("g")
     .attr("id", "follows");
@@ -277,6 +324,10 @@ init = function () {
     .data([0,0])
     .enter()
     .append("rect");
+  View.presses.append("g")
+    .attr("id", "pindv");
+  View.presses.append("g")
+    .attr("id", "psecs");
   
   View.timer = View.chart.append("g")
     .attr("id", "timer");
@@ -302,9 +353,9 @@ init = function () {
   View.legend = View.chart.append("g")
     .attr("id", "legend");
   View.legend.append("rect")
-    .attr("x", View.w - 180)
+    .attr("x", View.w - 100)
     .attr("y", 116)
-    .attr("width", 180)
+    .attr("width", 100)
     .attr("height", 240)
     .attr("fill", "white")
     .attr("fill-opacity", .5)
@@ -353,7 +404,7 @@ init = function () {
     .attr("alignment-baseline", "middle")
     .attr("font-family", "sans-serif")
     .attr("font-size", "12px")
-    .attr("x", View.w - 65)
+    .attr("x", View.w - 50)
     .attr("y", 340)
     .text(Array(16).join("\u00a0"))
     .on("mouseover", ltmr)
@@ -365,6 +416,7 @@ init = function () {
 
   var
     //Ajax call to r/thebutton
+    //TODO: organise within Util
     buttonjax = function (callback) {
       var raw = new XMLHttpRequest();
       raw.onreadystatechange = function () {
@@ -437,6 +489,13 @@ init = function () {
         Data.tots[ts] += dp;
         if (Data.raw.length > 1) Data.foll[Data.raw[Data.raw.length - 2][0]][ts] += dp
       }
+      
+      var sum = function (a, b) { return a + b };
+      var subtots = [0,1,2,3,4,5].map(function (a) {return Data.tots.slice(a*10+2, a*10+12).reduce(sum)});
+      subtots.push(subtots.reduce(sum));
+      View.legend.select("g#pcount").selectAll("text")
+        .data(subtots)
+        .text(function (d, i) { return (!subtots[6] || i == 6 ? "" : "(" + (100 * d / subtots[6]).toFixed(2) + "%) ") + d });
 
       //Render charts
       View.chart = d3.select("#chart")
@@ -469,11 +528,11 @@ init = function () {
           .ease("linear")
           .attr("width", function (d) {return View.w - (d - 1) * View.w / View.nbars});
         
-        View.totals.selectAll("rect")
+        View.totals.select("g#bars").selectAll("rect")
           .data(Data.tots.slice(1, 61))
           .transition()
           .attr("x", function (d, i) {return View.w - (i + 1) * View.w / View.nbars})
-          .attr("y", function (d) {return View.pressh - d * View.unit})
+          .attr("y", function (d) {return View.pressh - d * View.unit + View.w * 5/6 / View.nbars})
           .attr("width", View.w/View.nbars - 1)
           .attr("height", function (d) {return d * View.unit});        
         View.totals.select("g#count").selectAll("text")
@@ -486,7 +545,7 @@ init = function () {
           })
           .attr("x", function (d, i) {return View.w - (i + .5) * View.w / View.nbars - .5})
           .attr("y", function (d) {
-            var base = View.pressh - d * View.unit + View.w * 2/3 / View.nbars;
+            var base = View.pressh - d * View.unit + View.w * 3/2 / View.nbars;
             return !d || d * View.unit > View.w * 5/6 / View.nbars ? base : base - View.w * 5/6 / View.nbars
           });
         View.totals.select("g#label").selectAll("text")
@@ -494,7 +553,28 @@ init = function () {
           .text(function (d, i) { return i + 1 })
           .attr("font-size", Math.floor(View.w / 2 / View.nbars) + "px")
           .attr("x", function (d, i) {return View.w - (i + .5) * View.w / View.nbars - .5})
-          .attr("y", View.pressh + View.w * 2/3 / View.nbars);
+          .attr("y", View.pressh + View.w * 3/2 / View.nbars);
+        var cmltot = (function (cmltot) {
+          for (var i = 59; i >= 0; i--) cmltot[i] += 59 - i ? cmltot[i + 1] : 0;
+          return cmltot
+        })( Data.tots.slice(1, 61) )
+        View.totals.select("g#quantile").selectAll("rect")
+          .data(cmltot)
+          .transition()
+          .attr("x", function (d, i) { return (d - Data.tots[i+1]) * View.w / Math.max(subtots[6], 1) })
+          .attr("width", function (d, i) { return Math.max( Data.tots[i+1] * View.w / Math.max(subtots[6], 1) - 1, 0) });
+        View.totals.select("g#quantile").selectAll("text")
+          .data(cmltot)
+          .text(function (d, i) { return Data.tots[i+1] || null })
+          .transition()
+          .attr("font-size", Math.floor(View.w / 2 / View.nbars) + "px")
+          .attr("x", function (d, i) {
+            return d * View.w / Math.max(subtots[6], 1) - Math.min(
+              View.w / View.nbars,
+              Data.tots[i+1] * View.w / Math.max(subtots[6], 1) + 1
+            ) / 2
+          })
+          .attr("y", View.w * 5/12 / View.nbars)
 
         View.follows.selectAll("rect")
           .data(
@@ -503,7 +583,7 @@ init = function () {
               Data.foll[View.mbar].slice(1, 61)
           )
           .transition()
-          .attr("y", function (d) {return View.pressh - d * View.unit})
+          .attr("y", function (d) {return View.pressh - d * View.unit + View.w * 5/6 / View.nbars})
           .attr("height", function (d) {return d * View.unit});
         View.follows.selectAll("text")
           .data(
@@ -520,46 +600,18 @@ init = function () {
           .transition()
           .text(function (d) { return d })
           .attr("y", function (d) {
-            var base = View.pressh - d * View.unit + View.w * 2/3 / View.nbars;
+            var base = View.pressh - d * View.unit + View.w * 3/2 / View.nbars;
             return View.mbar === null ? View.h + 20 : !d || d * View.unit > View.w * 5/6 / View.nbars ? base : base - View.w * 5/6 / View.nbars
           });
         
       } else if (View.charts[0] == "timeseries") {
         
         //Time-series chart
-        View.presses.selectAll("g.press")
+        View.presses.select("g#pindv").selectAll("g")
           .data(Data.raw)
           .enter()
           .append("g")
-          .attr("class", "press")
           .each(pe);
-        View.presses.selectAll("text:last-of-type")
-          .each(function () {
-            this.parentNode.appendChild(this);
-            var t = View.presses.selectAll("text")[0].length;
-            if (t>1 && (new Date(Data.raw[t-1][2]).getSeconds() + Data.raw[t-1][0]) % 60 < new Date(Data.raw[t-2][2] + 1).getSeconds()) {
-              View.presses.selectAll("text:nth-last-of-type(2)").attr("fill", Util.ccon.apply(null, Util.opmix(Util.color(Data.raw[t-2][0] - 1),Util.color(Data.raw[t-1][0] - 1),.5)))
-            }
-          });
-        View.presses.selectAll("text")
-          .data(Data.raw)
-          .enter()
-          .append("text")
-          .text(function (d) { return d[0] })
-          .attr("x", function (d) { return View.w * (new Date(d[2]-1000).getSeconds() + .5) / 60 } )
-          .attr("y", function (d) {
-            return View.munit * (
-              Number(new Date(d[2]-1000).getSeconds() < 60 - d[0]) + .5 + Math.floor(( d[2] - 1000*(61-d[0]) ) / 60000)
-              - Math.floor(( Data.raw[0][2] - 1000*(61-Data.raw[0][0]) ) / 60000)
-            )
-          })
-          .attr("font-size", Math.max( Math.floor(Math.min( View.w / 120, View.munit / 2 )), 5) + "px")
-          .attr("alignment-baseline", "central")
-          .attr("text-anchor", "middle")
-          .attr("font-family", "sans-serif")
-          .attr("fill", function(d) {
-            return Util.ccon.apply(null, Util.op.apply(null, Util.hexrgb( Util.color(d[0] - 1) ).concat([.5])))
-          });
         var
           d0 = [curr.ts, curr.dt],
           s = new Date(d0[1]).getSeconds();
@@ -592,15 +644,34 @@ init = function () {
             )
           })
           .attr("width", function(d, i) {return !i || d ? Math.max(d * View.w/60 - 1, 0) : 0})
-          .attr("height", View.munit - 1)
+          .attr("height", View.munit - 1);
+        View.presses.select("g#psecs").selectAll("text")
+          .data(Data.raw)
+          .enter()
+          .append("text")
+          .each(function (d, i) {
+            if (i>0 && (new Date(Data.raw[i][2]).getSeconds() + Data.raw[i][0]) % 60 < new Date(Data.raw[i-1][2]).getSeconds() + 1) {
+              View.presses.select("g#psecs").selectAll("text:nth-of-type(" + i + ")")[0][0].setAttribute(
+                "fill", Util.ccon.apply(null, Util.opmix(Util.color(Data.raw[i][0] - 1), Util.color(Data.raw[i-1][0] - 1), .5))
+              )
+            }
+          })
+          .text(function (d) { return d[0] })
+          .attr("x", function (d) { return View.w * (new Date(d[2]-1000).getSeconds() + .5) / 60 } )
+          .attr("y", function (d) {
+            return View.munit * (
+              Number(new Date(d[2]-1000).getSeconds() < 60 - d[0]) + .5 + Math.floor(( d[2] - 1000*(61-d[0]) ) / 60000)
+              - Math.floor(( Data.raw[0][2] - 1000*(61-Data.raw[0][0]) ) / 60000)
+            )
+          })
+          .attr("font-size", Math.max( Math.floor(Math.min( View.w / 120, View.munit / 2 )), 5) + "px")
+          .attr("alignment-baseline", "central")
+          .attr("text-anchor", "middle")
+          .attr("font-family", "sans-serif")
+          .attr("fill", function(d) {
+            return Util.ccon.apply(null, Util.op.apply(null, Util.hexrgb( Util.color(d[0] - 1) ).concat([.5])))
+          })
       }
-      
-      var sum = function (a, b) { return a + b };
-      var subtots = [0,1,2,3,4,5].map(function (a) {return Data.tots.slice(a*10+2, a*10+12).reduce(sum)});
-      subtots.push(subtots.reduce(sum));
-      View.legend.select("g#pcount").selectAll("text")
-        .data(subtots)
-        .text(function (d, i) { return (!subtots[6] || i == 6 ? "" : "(" + (100 * d / subtots[6]).toFixed(2) + "%) ") + d });
 
       prev = curr;
       Data.last = curr.ts
