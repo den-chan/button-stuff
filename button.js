@@ -1,5 +1,5 @@
 init = function () {
-  var B = {
+  B = {
     data: {
       utypes: [
         "users-online",
@@ -43,23 +43,23 @@ init = function () {
 
     color: function (c) {
       var
-        lookup = function (v) {
-          return [
-            [136, 136, 136],
-            [229, 0, 0],
-            [229, 149, 0],
-            [229, 217, 0],
-            [2, 190, 1],
-            [0, 131, 199],
-            [130, 0, 128]
-          ][Math.floor((v + 9)/10)]
+        lookup = function (c) {
+          return typeof c == "number" ?
+            [
+              [136, 136, 136],
+              [229, 0, 0],
+              [229, 149, 0],
+              [229, 217, 0],
+              [2, 190, 1],
+              [0, 131, 199],
+              [130, 0, 128]
+            ][Math.floor((c + 9)/10)] :
+            (function (hex, rgb) {
+              (rgb = /^#?([a-f\d])([a-f\d])([a-f\d])$/i.exec(hex) || /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)).shift();
+              return rgb.map(function (i) {return i[1] ? parseInt(i, 16) : parseInt(i + i, 16)})
+            })(c)
         },
-        color = ( typeof c == "number" ? lookup :
-          function (hex, rgb) {
-            (rgb = /^#?([a-f\d])([a-f\d])([a-f\d])$/i.exec(hex) || /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)).shift();
-            return rgb.map(function (i) {return i[1] ? parseInt(i, 16) : parseInt(i + i, 16)})
-          }
-        )(c);
+        color = lookup(c);
       return {
         get val() {
           return "#" + color.map(function(a) {
@@ -84,11 +84,11 @@ init = function () {
         },
         get op() { return this.nop(.5) },
         nop: function (a) {
-          color = color.map(function (c) { return Math.floor((1 - a) * c + 255 * a) });
+          color = color.map(function (c) { return Math.floor(c * a + 255 * (1 - a)) });
           return this
         },
-        opmix: function (v, a) {
-          color = color.map(function(c, i) { return Math.floor( (1 - a)*lookup(v)[i] + a*((1 - a)*c + 255*a) ) });
+        mix: function (v, a) {
+          color = color.map(function(c, i) { return Math.floor( lookup(v)[i] * a + c * (1 - a) ) });
           return this
         }
       }
@@ -289,8 +289,10 @@ init = function () {
           B.view.presses.select("g#pindv").selectAll("g")
             .data(B.data.raw)
             .enter()
-            .append("g")
-            .each(B.view.events.pe);
+            .insert("g", ":first-child")
+            .each(B.view.events.pe)
+            .on("mouseover", B.view.events.pr)
+            .on("mouseout", B.view.events.pt);
           var
             d0 = [curr.ts, curr.dt],
             s = new Date(d0[1]).getSeconds();
@@ -300,7 +302,7 @@ init = function () {
               .duration(0)
               .attr("x", function (d, i) {return i ? 0 : B.view.w * ((s + d0[0]) % 60) / 60})
               .attr("y", function (d, i) {
-                return B.view.munit * (
+                return 1 + B.view.munit * (
                    !B.data.raw.length ? i : i + Math.floor(( d0[1] - 1000*(61-d0[0]) ) / 60000)
                   - Math.floor(( B.data.raw[0][2] - 1000*(61-B.data.raw[0][0]) ) / 60000)
                 )
@@ -317,7 +319,7 @@ init = function () {
             .ease("linear")
             .attr("x", function (d, i) {return i ? 0 : B.view.w * ((s + d0[0]) % 60) / 60})
             .attr("y", function (d, i) {
-              return B.view.munit * (
+              return 1 + B.view.munit * (
                  !B.data.raw.length ? i : i + Math.floor(( d0[1] - 1000*(61-d0[0]) ) / 60000)
                 - Math.floor(( B.data.raw[0][2] - 1000*(61-B.data.raw[0][0]) ) / 60000)
               )
@@ -331,7 +333,7 @@ init = function () {
             .text(function (d) { return d[0] })
             .attr("x", function (d) { return B.view.w * (new Date(d[2]-1000).getSeconds() + .5) / 60 } )
             .attr("y", function (d) {
-              return B.view.munit * (
+              return 1 + B.view.munit * (
                 Number(new Date(d[2]-1000).getSeconds() < 60 - d[0]) + .5 + Math.floor(( d[2] - 1000*(61-d[0]) ) / 60000)
                 - Math.floor(( B.data.raw[0][2] - 1000*(61-B.data.raw[0][0]) ) / 60000)
               )
@@ -344,7 +346,7 @@ init = function () {
             .each(function (d, i) {
               if (i>0 && (new Date(B.data.raw[i][2]).getSeconds() + B.data.raw[i][0]) % 60 < new Date(B.data.raw[i-1][2]).getSeconds() + 1) {
                 B.view.presses.select("g#psecs").selectAll("text:nth-of-type(" + i + ")")
-                  .attr("fill", B.color(B.data.raw[i-1][0] - 1).opmix(B.data.raw[i][0] - 1, .5).ccon.val)
+                  .attr("fill", B.color(B.data.raw[i][0] - 1).op.mix(B.data.raw[i-1][0] - 1, .5).ccon.val)
               }
             })
         }
@@ -391,6 +393,7 @@ init = function () {
       get pressh() {return this.h - this.w * 4/3 / 60},
       get unit() { return this.pressh / (Math.max.apply(null, B.data.tots) || 1) },
       mbar: null,
+      mpress: null,
       charts: ["timeseries", "aggregate"],//["aggregate", "timeseries"],
       munit: 20,
       events: {
@@ -425,6 +428,8 @@ init = function () {
               var base = B.view.pressh - d * B.view.unit + B.view.w * 3/2 / 60;
               return !d || d * B.view.unit > B.view.w * 5/6 / 60 ? base : base - B.view.w * 5/6 / 60
             });
+          B.view.legend.select("g#ltip").selectAll("text")
+            .text("Following presses")
         },
         trmt: function (d0, i0) {
           B.view.mbar = null;
@@ -445,6 +450,8 @@ init = function () {
           B.view.follows.selectAll("text")
             .data(Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0))
             .attr("y", B.view.h + 20)
+          B.view.legend.select("g#ltip").selectAll("text")
+            .text(null)
         },
         lcmr: function (d0, i0) {
           var self = this;
@@ -525,7 +532,7 @@ init = function () {
             .append("rect")
             .attr("x", function (d, i) {return i ? 0 : B.view.w * ((s + d0[0] - 1) % 60) / 60})
             .attr("y", function (d, i) {
-              return B.view.munit * (
+              return 1 + B.view.munit * (
                 i + Math.floor(( d0[2] - 1000*(61-d0[0]) ) / 60000)
                 - Math.floor(( B.data.raw[0][2] - 1000*(61-B.data.raw[0][0]) ) / 60000)
               )
@@ -534,6 +541,62 @@ init = function () {
             .attr("height", B.view.munit - 1)
             .attr("fill", B.color(d0[0] - 1).val)
             .attr("fill-opacity", .5)
+        },
+        pr: function (d0) {
+          B.view.mpress = this;
+          var
+            is = B.view.presses.select("g#pindv").selectAll("g")[0],
+            i0 = is.length - 1 - is.indexOf(this),
+            d0 = d3.select(B.view.presses.select("g#pindv").selectAll("g")[0][i0]).data()[0],
+            s = new Date(d0[2]).getSeconds(),
+            c = s > 60 - d0[0] || s == 0,
+            pd = function (d, i) {
+              var
+                y = 1 + B.view.munit * (
+                  i + Math.floor(( d0[2] - 1000*(61-d0[0]) ) / 60000)
+                  - Math.floor(( B.data.raw[0][2] - 1000*(61-B.data.raw[0][0]) ) / 60000)
+                ),
+                p = "M" + ((B.view.w * (i ? 0 : c ? (s + 59) % 60 + 1 : 60) / 60) - 1 - .5 * i) + " " + (y - .5) +
+                  " h " + (2*i-1) * (d * B.view.w/60 - c) +
+                  " v " + (B.view.munit) +
+                  " h " + (1-2*i) * (d * B.view.w/60 - c);
+              return c ? p + " Z" : p;
+            };
+          B.view.ptip.select("g#border").selectAll("path")
+            .data(function (d, i) { return c ? [61 - d0[0]] : [61 - d0[0] - s, s] })
+            .enter()
+            .append("path")
+            .attr("d", pd)
+            .attr("fill", "none")
+            .attr("stroke", "black");
+
+          d3.select(this).selectAll("rect").attr("fill-opacity", 1);
+          B.view.presses.select("g#psecs > text:nth-child(" + (i0 + 1) + ")")
+            .attr("fill", B.color(d0[0] - 1).ccon.val);
+          if (!i0 || (new Date(B.data.raw[i0][2]).getSeconds() + B.data.raw[i0][0]) % 60 > new Date(B.data.raw[i0-1][2]).getSeconds()) return;
+          B.view.presses.select("g#psecs > text:nth-child(" + i0 + ")")
+            .attr("fill", B.color(d0[0]).mix(d0[0] - 1, .5).ccon.val)
+            .attr("opacity", .3)
+        },
+        pt: function () {
+          var
+            is = B.view.presses.select("g#pindv").selectAll("g")[0],
+            i0 = is.length - 1 - is.indexOf(this),
+            d0 = d3.select(B.view.presses.select("g#pindv").selectAll("g")[0][i0]).data()[0];
+          B.view.ptip.select("g#border").selectAll("path")
+            .data([])
+            .exit()
+            .remove();
+
+          d3.select(this).selectAll("rect").attr("fill-opacity", .5);
+          B.view.presses.select("g#psecs > text:nth-child(" + (i0 + 1) + ")")
+            .attr("fill", B.color(d0[0] - 1).op.ccon.val);
+          if (!i0 || (new Date(B.data.raw[i0][2]).getSeconds() + B.data.raw[i0][0]) % 60 > new Date(B.data.raw[i0-1][2]).getSeconds()) return;
+          B.view.presses.select("g#psecs > text:nth-child(" + i0 + ")")
+            .each(function (d) { d1 = d })
+            .attr("fill", B.color(d1[0]).op.mix(d0[0], .5).ccon.val)
+            .attr("opacity", null);
+          B.view.mpress = null
         }
       }
     }
@@ -640,6 +703,10 @@ init = function () {
     .attr("id", "pindv");
   B.view.presses.append("g")
     .attr("id", "psecs");
+  B.view.ptip = B.view.presses.append("g")
+    .attr("id", "ptip");
+  B.view.ptip.append("g")
+    .attr("id", "border");
   
   B.view.timer = B.view.chart.append("g")
     .attr("id", "timer");
