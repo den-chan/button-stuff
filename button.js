@@ -1,344 +1,656 @@
 init = function () {
-  var //TODO: Create project-level object
-    utypes = [
-      "users-online",
-      "flair-no-press",
-      "flair-press-6",
-      "flair-press-5",
-      "flair-press-4",
-      "flair-press-3",
-      "flair-press-2",
-      "flair-press-1",
-      "flair-cant-press",
-      "no-flair"
-    ],
-    ucolors = [
-      "#000",
-      "#888",
-      "#820080",
-      "#0083c7",
-      "#02be01",
-      "#e5d900",
-      "#e59500",
-      "#e50000",
-      "#e4e4e4",
-      "#fff"
-    ];
-  Data = { //TODO: timestamping
-    raw: new Array,
-    tots: Array.apply(null, Array(61)).map(Number.prototype.valueOf, 0),
-    foll: Array.apply(null, Array(61)).map(function(){return Array.apply(null, Array(61)).map(Number.prototype.valueOf, 0)}),
-    last: null,
-    rbtn: utypes.reduce(function(o, v) { o[v] = 0; return o }, {}),
-    araw: new Array
-  };
-  var
-    Interval = {
+  var B = {
+    data: {
+      utypes: [
+        "users-online",
+        "flair-no-press",
+        "flair-press-6",
+        "flair-press-5",
+        "flair-press-4",
+        "flair-press-3",
+        "flair-press-2",
+        "flair-press-1",
+        "flair-cant-press",
+        "no-flair"
+      ],
+      ucolors: [
+        "#000",
+        "#888",
+        "#820080",
+        "#0083c7",
+        "#02be01",
+        "#e5d900",
+        "#e59500",
+        "#e50000",
+        "#e4e4e4",
+        "#fff"
+      ],
+      raw: new Array,
+      tots: Array.apply(null, Array(61)).map(Number.prototype.valueOf, 0),
+      foll: Array.apply(null, Array(61)).map(function(){return Array.apply(null, Array(61)).map(Number.prototype.valueOf, 0)}),
+      last: null,
+      rbtn: function () {return B.data.utypes.reduce(function(o, v) { o[v] = 0; return o }, {})},
+      araw: new Array //TODO: timestamping
+    },
+
+    interval: {
       val: 10000,
       id: null,
       adj: false,
       test: null,
       dt: [[],]
-      , debug: 0 //active user count debug
     },
-    View = {
+
+    color: function (c) {
+      var
+        lookup = function (v) {
+          return [
+            [136, 136, 136],
+            [229, 0, 0],
+            [229, 149, 0],
+            [229, 217, 0],
+            [2, 190, 1],
+            [0, 131, 199],
+            [130, 0, 128]
+          ][Math.floor((v + 9)/10)]
+        },
+        color = ( typeof c == "number" ? lookup :
+          function (hex, rgb) {
+            (rgb = /^#?([a-f\d])([a-f\d])([a-f\d])$/i.exec(hex) || /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)).shift();
+            return rgb.map(function (i) {return i[1] ? parseInt(i, 16) : parseInt(i + i, 16)})
+          }
+        )(c);
+      return {
+        get val() {
+          return "#" + color.map(function(a) {
+            var b = a.toString(16);
+            return b[1] ? b : "0" + b
+          }).join("")
+        },
+        //Use w3 colour brightness guideline to choose contrasting text colour
+        get ccon() { 
+          color = (( (color[0] * 299) + (color[1] * 587) + (color[2] * 114) ) / 1000 >= 128) ? [0, 0, 0] : [255, 255, 255];
+          return this
+        },
+        get fade() { return this.nfade(.5) },
+        nfade: function(amt) {
+          color = color.map(function(v) { return v + Math.floor((amt > 1 ? 1 : amt < 0 ? 0 : amt) * (255 - v)) });
+          return this
+        },
+        get darken() { return this.ndarken(.5) },
+        ndarken: function(amt) {
+          color = color.map(function(v) { return Math.floor((amt > 1 ? 0 : amt < 0 ? 1 : 1 - amt) * v) });
+          return this
+        },
+        get op() { return this.nop(.5) },
+        nop: function (a) {
+          color = color.map(function (c) { return Math.floor((1 - a) * c + 255 * a) });
+          return this
+        },
+        opmix: function (v, a) {
+          color = color.map(function(c, i) { return Math.floor( (1 - a)*lookup(v)[i] + a*((1 - a)*c + 255*a) ) });
+          return this
+        }
+      }
+    },
+
+    util: {
+      //Ajax call to r/thebutton
+      buttonjax: function (callback) {
+        var raw = new XMLHttpRequest();
+        raw.onreadystatechange = function () {
+          if (raw.readyState !== 4) return;
+          if (raw.status === 200) callback(raw.responseText)
+        }
+        //Credit to github.com/lezed1 for the proxy. Thanks bro!
+        raw.open("get", "https://cors-unblocker.herokuapp.com/get?url=https%3A%2F%2Freddit.com%2Fr%2Fthebutton", true);
+        raw.timeout = 5000;
+        raw.send()
+      },
+
+      //Polls r/thebutton for active user count, attempting to minimise bandwidth
+      triggerinterval: function (val) {
+        !B.interval.id || window.clearInterval(B.interval.id);
+        B.interval.adj = !!val;
+        B.interval.id = window.setInterval(function () {
+          B.util.buttonjax(B.util.active);
+          if (B.interval.adj) {
+            B.interval.adj = false;
+            B.util.triggerinterval()
+          }
+        }, val||B.interval.val)
+      },
+      intmonitor: function () {
+        var l = B.data.araw.length;
+        if (B.interval.val==10000) {
+          if (l > 1 && !B.util.arawcomp(B.data.araw[l-1], B.data.araw[l-2])) {
+            B.interval.val = 64500; //Active users refresh rate (??)
+            B.util.triggerinterval(90000)
+          }
+        } else {
+          if (!!B.interval.test) {
+            if (B.interval.test == "init") {
+              B.util.triggerinterval(54000);
+              B.interval.test = new Array;
+              return
+            }
+            B.interval.test.push(B.data.araw[l - 1]);
+            if (B.interval.test.length == 3) {
+              if (!B.util.arawcomp(B.interval.test[0], B.interval.test[1])) { B.util.triggerinterval(90000) }
+              else if (!B.util.arawcomp(B.interval.test[1], B.interval.test[2])) { B.util.triggerinterval(80000) }
+              else { B.util.triggerinterval(54000) }
+              B.interval.test = null
+            } else { B.util.triggerinterval(10000) }
+          }
+        }
+      },
+      arawcomp: function (a1, a2) {
+        for (var i = 0; i < 9; i++) if (a1[i] != a2[i]) break;
+        return i == 9
+      },
+
+      //Update pressers data
+      prev: {},
+      tick: function (e) {
+        var pct = JSON.parse(e.data);
+        if (pct.type != "ticking") return;
+        var
+          dt = new Date(Date.UTC.apply(null, pct.payload.now_str.split("-").map(Number))),
+          curr = {
+            dt: dt.setMonth(dt.getMonth() - 1),
+            np: parseInt(pct.payload.participants_text.replace(/[^0-9]/,'')),
+            ts: pct.payload.seconds_left
+          },
+          ts, dp;
+        if (Object.keys(B.util.prev).length > 0 && curr.np != B.util.prev.np) {
+          B.data.raw.push([ts = B.data.last, dp = curr.np - B.util.prev.np, curr.dt]);
+          B.data.tots[ts] += dp;
+          if (B.data.raw.length > 1) B.data.foll[B.data.raw[B.data.raw.length - 2][0]][ts] += dp
+        }
+
+        //Render charts
+        B.view.chart = d3.select("#chart")
+          .attr("width", B.view.w)
+          .attr("height", B.view.h + B.view.w / 6 / 60);
+        
+        var
+          sum = function (a, b) { return a + b },
+          subtots = [0,1,2,3,4,5].map(function (a) {return B.data.tots.slice(a*10+2, a*10+12).reduce(sum)});
+        subtots.push(subtots.reduce(sum));
+        B.view.legend.select("g#pcount").selectAll("text")
+          .data(subtots)
+          .text(function (d, i) { return (!subtots[6] || i == 6 ? "" : "(" + (100 * d / subtots[6]).toFixed(2) + "%) ") + d });
+
+        if (B.view.charts[0] == "aggregate") {
+
+          //Aggregate chart
+          B.view.aggregate
+            .attr("width", B.view.w)
+            .attr("height", B.view.pressh);
+
+          if (curr.ts >= B.util.prev.ts) {
+            B.view.aggregate.select("g#sandtimer").selectAll("rect")
+              .transition()
+              .duration(0)
+              .attr("width", 0)
+              .attr("height", B.view.pressh)
+              .attr("fill", "#820080")
+              .attr("fill-opacity", .2)
+            d3.timer.flush()
+          }
+          B.view.aggregate.select("g#sandtimer").selectAll("rect")
+            .data([curr.ts])
+            .attr("style", function (d) {return "fill: " + B.color(d - 1).val + "; fill-opacity: .2"})
+            .attr("height", B.view.pressh)
+            .transition()
+            .duration(1000)
+            .ease("linear")
+            .attr("width", function (d) {return B.view.w - (d - 1) * B.view.w / 60});
+
+          B.view.totals.select("g#bars").selectAll("rect")
+            .data(B.data.tots.slice(1, 61))
+            .transition()
+            .attr("x", function (d, i) {return B.view.w - (i + 1) * B.view.w / 60})
+            .attr("y", function (d) {return B.view.pressh - d * B.view.unit + B.view.w * 5/6 / 60})
+            .attr("width", B.view.w/60 - 1)
+            .attr("height", function (d) {return d * B.view.unit});        
+          B.view.totals.select("g#count").selectAll("text")
+            .data(B.data.tots.slice(1, 61))
+            .transition()
+            .text(function (d) { return d })
+            .attr("font-size", Math.floor(B.view.w / 2 / 60) + "px")
+            .attr("fill", function (d, i) {
+              return !d || B.view.mbar !== null && i != B.view.mbar - 1 ? "transparent" : d * B.view.unit > B.view.w * 5/6 / 60 ? B.color(i).ccon.val : "black"
+            })
+            .attr("x", function (d, i) {return B.view.w - (i + .5) * B.view.w / 60 - .5})
+            .attr("y", function (d) {
+              var base = B.view.pressh - d * B.view.unit + B.view.w * 3/2 / 60;
+              return !d || d * B.view.unit > B.view.w * 5/6 / 60 ? base : base - B.view.w * 5/6 / 60
+            });
+          B.view.totals.select("g#label").selectAll("text")
+            .data(B.data.tots.slice(1, 61))
+            .text(function (d, i) { return i + 1 })
+            .attr("font-size", Math.floor(B.view.w / 2 / 60) + "px")
+            .attr("x", function (d, i) {return B.view.w - (i + .5) * B.view.w / 60 - .5})
+            .attr("y", B.view.pressh + B.view.w * 3/2 / 60);
+          var cmltot = (function (cmltot) {
+            for (var i = 59; i >= 0; i--) cmltot[i] += 59 - i ? cmltot[i + 1] : 0;
+            return cmltot
+          })( B.data.tots.slice(1, 61) )
+          B.view.totals.select("g#quantile").selectAll("rect")
+            .data(cmltot)
+            .transition()
+            .attr("x", function (d, i) { return (d - B.data.tots[i+1]) * B.view.w / Math.max(subtots[6], 1) })
+            .attr("width", function (d, i) { return Math.max( B.data.tots[i+1] * B.view.w / Math.max(subtots[6], 1) - 1, 0) });
+          B.view.totals.select("g#quantile").selectAll("text")
+            .data(cmltot)
+            .text(function (d, i) { return B.data.tots[i+1] || null })
+            .transition()
+            .attr("font-size", Math.floor(B.view.w / 2 / 60) + "px")
+            .attr("x", function (d, i) {
+              return d * B.view.w / Math.max(subtots[6], 1) - Math.min(
+                B.view.w / 60,
+                B.data.tots[i+1] * B.view.w / Math.max(subtots[6], 1) + 1
+              ) / 2
+            })
+            .attr("y", B.view.w * 5/12 / 60)
+
+          B.view.follows.selectAll("rect")
+            .data(
+              B.view.mbar === null ?
+                Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0) :
+                B.data.foll[B.view.mbar].slice(1, 61)
+            )
+            .transition()
+            .attr("y", function (d) {return B.view.pressh - d * B.view.unit + B.view.w * 5/6 / 60})
+            .attr("height", function (d) {return d * B.view.unit});
+          B.view.follows.selectAll("text")
+            .data(
+              B.view.mbar === null ?
+                Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0) :
+                B.data.foll[B.view.mbar].slice(1, 61)
+            )
+            .attr("fill", function (d, i) {
+              var b = B.color(i);
+              i == B.view.mbar - 1 || b.fade;
+              d * B.view.unit >= B.view.w * 5/6 / 60 || b.ndarken(.4);
+              return d ? b.ccon.val : "transparent"
+            })
+            .transition()
+            .text(function (d) { return d })
+            .attr("y", function (d) {
+              var base = B.view.pressh - d * B.view.unit + B.view.w * 3/2 / 60;
+              return B.view.mbar === null ? B.view.h + 20 : !d || d * B.view.unit > B.view.w * 5/6 / 60 ? base : base - B.view.w * 5/6 / 60
+            });
+
+        } else if (B.view.charts[0] == "timeseries") {
+
+          //Time-series chart
+          B.view.presses.select("g#pindv").selectAll("g")
+            .data(B.data.raw)
+            .enter()
+            .append("g")
+            .each(B.view.events.pe);
+          var
+            d0 = [curr.ts, curr.dt],
+            s = new Date(d0[1]).getSeconds();
+          if (curr.ts >= B.util.prev.ts) {
+            B.view.presses.select("g#current").selectAll("rect")
+              .transition()
+              .duration(0)
+              .attr("x", function (d, i) {return i ? 0 : B.view.w * ((s + d0[0]) % 60) / 60})
+              .attr("y", function (d, i) {
+                return B.view.munit * (
+                   !B.data.raw.length ? i : i + Math.floor(( d0[1] - 1000*(61-d0[0]) ) / 60000)
+                  - Math.floor(( B.data.raw[0][2] - 1000*(61-B.data.raw[0][0]) ) / 60000)
+                )
+              })
+              .attr("width", 0)
+              .attr("fill", "#820080")
+            d3.timer.flush()
+          }
+          B.view.presses.select("g#current").selectAll("rect")
+            .data(s > 60 - d0[0] ? [61 - d0[0], 0] : [60 - d0[0] - s, s + 1])
+            .attr("fill", B.color(d0[0] - 1).val)
+            .transition()
+            .duration(1000)
+            .ease("linear")
+            .attr("x", function (d, i) {return i ? 0 : B.view.w * ((s + d0[0]) % 60) / 60})
+            .attr("y", function (d, i) {
+              return B.view.munit * (
+                 !B.data.raw.length ? i : i + Math.floor(( d0[1] - 1000*(61-d0[0]) ) / 60000)
+                - Math.floor(( B.data.raw[0][2] - 1000*(61-B.data.raw[0][0]) ) / 60000)
+              )
+            })
+            .attr("width", function(d, i) {return !i || d ? Math.max(d * B.view.w/60 - 1, 0) : 0})
+            .attr("height", B.view.munit - 1);
+          B.view.presses.select("g#psecs").selectAll("text")
+            .data(B.data.raw)
+            .enter()
+            .append("text")
+            .text(function (d) { return d[0] })
+            .attr("x", function (d) { return B.view.w * (new Date(d[2]-1000).getSeconds() + .5) / 60 } )
+            .attr("y", function (d) {
+              return B.view.munit * (
+                Number(new Date(d[2]-1000).getSeconds() < 60 - d[0]) + .5 + Math.floor(( d[2] - 1000*(61-d[0]) ) / 60000)
+                - Math.floor(( B.data.raw[0][2] - 1000*(61-B.data.raw[0][0]) ) / 60000)
+              )
+            })
+            .attr("font-size", Math.max( Math.floor(Math.min( B.view.w / 120, B.view.munit / 2 )), 5) + "px")
+            .attr("alignment-baseline", "central")
+            .attr("text-anchor", "middle")
+            .attr("font-family", "sans-serif")
+            .attr("fill", function(d) { return B.color(d[0] - 1).op.ccon.val })
+            .each(function (d, i) {
+              if (i>0 && (new Date(B.data.raw[i][2]).getSeconds() + B.data.raw[i][0]) % 60 < new Date(B.data.raw[i-1][2]).getSeconds() + 1) {
+                B.view.presses.select("g#psecs").selectAll("text:nth-of-type(" + i + ")")
+                  .attr("fill", B.color(B.data.raw[i-1][0] - 1).opmix(B.data.raw[i][0] - 1, .5).ccon.val)
+              }
+            })
+        }
+
+        B.util.prev = curr;
+        B.data.last = curr.ts
+
+        //Sync timer
+        B.interval.dt[1] = 0;
+        B.interval.dt[0].push(setInterval(function () {
+          while (B.interval.dt[0][1]) clearInterval(B.interval.dt[0].shift());
+          B.interval.dt[1] += .1;
+          B.view.timer.selectAll("text")
+            .data([(B.data.last - B.interval.dt[1]).toFixed(1)])
+            .text(function (d) { return d })
+            .attr("x", B.view.w - 20)
+        }, 100))
+      },
+
+      //Update active users data
+      active: function (resp) {
+        for (var i = 0, r, rbtnnew = []; i < 9; i++) {
+          rbtnnew.push(B.data.rbtn[B.data.utypes[i]] = parseInt(
+            (new RegExp("(?:" + B.data.utypes[i] + ".{" + (i ? 11 : 94) + "})([0-9,]+)").exec(resp)||[,"0"])[1]
+              .replace(/[^0-9]/,'')
+          ))
+          r = i ? r - rbtnnew[i] : rbtnnew[i]
+        }
+        rbtnnew.push(B.data.rbtn["no-flair"] = r);
+        B.view.legend.select("g#acount").selectAll("text")
+          .data(rbtnnew)
+          .text(function (d) { return d });
+        switch (B.data.araw.length != 0) {
+          case true: if (B.util.arawcomp(rbtnnew, B.data.araw[B.data.araw.length - 1])) break
+          default: B.data.araw.push(rbtnnew)
+        }
+        B.util.intmonitor()
+      }
+    },
+
+    view: {
       get w() {return window.innerWidth - 40},
       get h() {return window.innerHeight - 40},
-      nbars: 60,
-      get pressh() {return this.h - this.w * 4/3 / this.nbars},
-      get unit() { return this.pressh / (Math.max.apply(null, Data.tots) || 1) },
+      get pressh() {return this.h - this.w * 4/3 / 60},
+      get unit() { return this.pressh / (Math.max.apply(null, B.data.tots) || 1) },
       mbar: null,
       charts: ["timeseries", "aggregate"],//["aggregate", "timeseries"],
-      munit: 20
-    };
-    Util = { //TODO: colour object
-      color: function (i) {
-        return [ "#888", "#e50000", "#e59500", "#e5d900", "#02be01", "#0083c7", "#820080" ][Math.floor((i+9)/10)]
-      },
-      hexrgb: function (hex, rgb) {
-        (rgb = /^#?([a-f\d])([a-f\d])([a-f\d])$/i.exec(hex) || /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)).shift();
-        return rgb.map(function (i) {return i[1] ? parseInt(i, 16) : parseInt(i + i, 16)})
-      },
-      rgbhex: function (rgb) {
-        return "#" + rgb.map(function(a) {
-          var b = a.toString(16);
-          return b[1] ? b : "0" + b
-        }).join("")
-      },
-      //Use w3 colour brightness guideline to choose contrasting text colour
-      ccon: function (r, g, b) { return (((r*299)+(g*587)+(b*114))/1000 >= 128) ? "black" : "white" },
-      fade: function(hex, amt) {
-        return this.rgbhex(this.hexrgb(hex).map(function(v) {return v + Math.floor((amt>1 ? 1 : amt<0 ? 0 : typeof amt !== "number" ? 0.5 : amt) * (255-v))}))
-      },
-      darken: function(hex, amt) {
-        return this.rgbhex(this.hexrgb(hex).map(function(v) {return Math.floor((amt>1 ? 0 : amt<0 ? 1 : typeof amt !== "number" ? 0.5 : 1 - amt) * v)}))
-      },
-      op: function (r, g, b, a) { return [r, g, b].map(function (c) {return Math.floor((1 - a)*c + 255*a)}) },
-      opmix: function (c1, c2, a) {
-        return this.hexrgb(c1).map(function(c, i) {
-          return Math.floor( (1 - a)*Util.hexrgb(c2)[i] + a*((1 - a)*c + 255*a) )
-        })
+      munit: 20,
+      events: {
+        trmr: function (d0, i0) {
+          B.view.mbar = i0 + 1;
+          B.view.totals.select("g#bars").selectAll("rect")
+            .attr("fill", function (d, i) { return i == i0 ? B.color(i0).val : B.color(i).fade.val });
+          B.view.totals.select("g#count").selectAll("text")
+            .attr("fill", function (d, i) {return !d || i != i0 ? "transparent" : d * B.view.unit > B.view.w * 5/6 / 60 ? B.color(i).ccon.val : "black"});
+          B.view.totals.select("g#quantile").selectAll("rect")
+            .attr("fill", function (d, i) { return i == i0 ? B.color(i0).val : B.color(i).fade.val });
+          B.view.totals.select("g#quantile").selectAll("text")
+            .attr("fill", function (d, i) {return d && i == i0 ? B.color(i).ccon.val : "transparent"});
+          B.view.follows.selectAll("rect")
+            .data(B.data.foll[B.view.mbar].slice(1, 61))
+            .attr("x", function (d, i) {return B.view.w - (i + 1) * B.view.w / 60})
+            .attr("y", function (d) {return B.view.pressh - d * B.view.unit + B.view.w * 5/6 / 60})
+            .attr("width", B.view.w/60 - 1)
+            .attr("height", function (d) {return d * B.view.unit});
+          B.view.follows.selectAll("text")
+            .data(B.data.foll[B.view.mbar].slice(1, 61))
+            .text(function (d) { return d })
+            .attr("font-size", Math.floor(B.view.w / 2 / 60) + "px")
+            .attr("fill", function (d, i) {
+              var b = B.color(i);
+              i != i0 || b.fade;
+              d * B.view.unit <= B.view.w * 5/6 / 60 || b.ndarken(.4);
+              return !d ? "transparent" : b.ccon.val
+            })
+            .attr("x", function (d, i) {return B.view.w - (i + .5) * B.view.w / 60 - .5})
+            .attr("y", function (d) {
+              var base = B.view.pressh - d * B.view.unit + B.view.w * 3/2 / 60;
+              return !d || d * B.view.unit > B.view.w * 5/6 / 60 ? base : base - B.view.w * 5/6 / 60
+            });
+        },
+        trmt: function (d0, i0) {
+          B.view.mbar = null;
+          B.view.totals.select("g#bars").selectAll("rect")
+            .attr("fill", function (d, i) {return B.color(i).val});
+          B.view.totals.select("g#count").selectAll("text")
+            .attr("fill", function (d, i) {
+              return !d ? "transparent" : d * B.view.unit > B.view.w * 5/6 / 60 ? B.color(i).ccon.val : "black"
+            });
+          B.view.totals.select("g#quantile").selectAll("rect")
+            .attr("fill", function (d, i) { return B.color(i).val });
+          B.view.totals.select("g#quantile").selectAll("text")
+            .attr("fill", function (d, i) { return B.color(i).ccon.val });
+          B.view.follows.selectAll("rect")
+            .data(Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0))
+            .attr("y", B.view.pressh)
+            .attr("height", 0)
+          B.view.follows.selectAll("text")
+            .data(Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0))
+            .attr("y", B.view.h + 20)
+        },
+        lcmr: function (d0, i0) {
+          var self = this;
+          B.view.legend.selectAll("circle")
+            .data(B.data.ucolors)
+            .attr("fill", function (d) { return self === this ? d : B.color(d).nfade(.7).val });
+          B.view.legend.select("g#ltip").selectAll("text")
+            .text(function (d, i) { return B.data.utypes[i0] });
+          B.view.legend.select("g#pcount").selectAll("text")
+            .filter(function (d, i) { return i0 == 0 ? i == 6 : i0 != 1 && i == 7 - i0 })
+            .attr("display", "inline");
+          B.view.events.lmr()
+        },
+        lcmt: function (d0, i0) {
+          B.view.legend.selectAll("circle")
+            .data(B.data.ucolors)
+            .attr("fill", function (d) { return d });
+          B.view.legend.select("g#ltip").selectAll("text")
+            .text(Array(16).join("\u00a0"));
+          B.view.legend.select("g#pcount").selectAll("text")
+            .filter(function (d, i) { return i0 == 0 ? i == 6 : i0 != 1 && i == 7 - i0 })
+            .attr("display", "none");
+          B.view.events.lmt()
+        },
+        ltmr: function () {
+          B.view.legend.selectAll("rect")
+            .transition()
+            .attr("x", B.view.w - 180)
+            .attr("width", 180);
+          B.view.legend.select("g#ltip").selectAll("text")
+            .transition()
+            .attr("x", B.view.w - 65);
+          d3.select(this)
+            .text("change chart");
+          B.view.legend.select("g#pcount").selectAll("text")
+            .transition()
+            .delay(250)
+            .attr("display", "inline");
+          B.view.events.lmr()
+        },
+        ltmt: function () {
+          B.view.legend.selectAll("rect")
+            .transition()
+            .attr("x", B.view.w - 100)
+            .attr("width", 100);
+          B.view.legend.select("g#ltip").selectAll("text")
+            .transition()
+            .attr("x", B.view.w - 50);
+          d3.select(this)
+            .text(Array(16).join("\u00a0"));
+          B.view.legend.select("g#pcount").selectAll("text")
+            .attr("display", "none");
+          B.view.events.lmt()
+        },
+        ltc: function () {
+          var t = B.view.charts.shift();
+          B.view[t].attr("display", "none");
+          B.view[B.view.charts[0]].attr("display", "inline");
+          B.view.charts.push(t)
+        },
+        lmr: function () {
+          B.view.legend.selectAll("rect")
+            .attr("fill-opacity", .8);
+          B.view.timer.selectAll("rect")
+            .attr("fill-opacity", .8)
+        }, 
+        lmt: function () {
+          B.view.legend.selectAll("rect")
+            .attr("fill-opacity", .5);
+          B.view.timer.selectAll("rect")
+            .attr("fill-opacity", .5)
+        },
+        pe: function (d0, i0) {
+          var s = new Date(d0[2]).getSeconds();
+          d3.select(this).selectAll("rect")
+            .data(function (d, i) { return s > 60 - d0[0] || s == 0 ? [61 - d0[0]] : [61 - d0[0] - s, s] })
+            .enter()
+            .append("rect")
+            .attr("x", function (d, i) {return i ? 0 : B.view.w * ((s + d0[0] - 1) % 60) / 60})
+            .attr("y", function (d, i) {
+              return B.view.munit * (
+                i + Math.floor(( d0[2] - 1000*(61-d0[0]) ) / 60000)
+                - Math.floor(( B.data.raw[0][2] - 1000*(61-B.data.raw[0][0]) ) / 60000)
+              )
+            })
+            .attr("width", function(d, i) {return d * B.view.w/60 - 1})
+            .attr("height", B.view.munit - 1)
+            .attr("fill", B.color(d0[0] - 1).val)
+            .attr("fill-opacity", .5)
+        }
       }
-    };
+    }
+  };
   
   //Initialise chart
-  //events
-  //TODO: View.events
-  var
-    trmr = function (d0, i0) {
-      View.mbar = i0 + 1;
-      View.totals.select("g#bars").selectAll("rect")
-        .attr("fill", function (d, i) { return i == i0 ? Util.color(i0) : Util.fade(Util.color(i)) });
-      View.totals.select("g#count").selectAll("text")
-        .attr("fill", function (d, i) {return !d || i != i0 ? "transparent" : d * View.unit > View.w * 5/6 / View.nbars ? Util.ccon.apply(null, Util.hexrgb(Util.color(i))) : "black"});
-      View.totals.select("g#quantile").selectAll("rect")
-        .attr("fill", function (d, i) { return i == i0 ? Util.color(i0) : Util.fade(Util.color(i)) });
-      View.totals.select("g#quantile").selectAll("text")
-        .attr("fill", function (d, i) {return d && i == i0 ? Util.ccon.apply(null, Util.hexrgb(Util.color(i))) : "transparent"});
-      View.follows.selectAll("rect")
-        .data(Data.foll[View.mbar].slice(1, 61))
-        .attr("x", function (d, i) {return View.w - (i + 1) * View.w / View.nbars})
-        .attr("y", function (d) {return View.pressh - d * View.unit + View.w * 5/6 / View.nbars})
-        .attr("width", View.w/View.nbars - 1)
-        .attr("height", function (d) {return d * View.unit});
-      View.follows.selectAll("text")
-        .data(Data.foll[View.mbar].slice(1, 61))
-        .text(function (d) { return d })
-        .attr("font-size", Math.floor(View.w / 2 / View.nbars) + "px")
-        .attr("fill", function (d, i) {
-          var b = Util.color(i);
-          b = i == i0 ? b : b = Util.fade(b);
-          b = d * View.unit > View.w * 5/6 / View.nbars ? b = Util.darken(b, .4) : b;
-          return !d ? "transparent" : Util.ccon.apply( null, Util.hexrgb(b) )
-        })
-        .attr("x", function (d, i) {return View.w - (i + .5) * View.w / View.nbars - .5})
-        .attr("y", function (d) {
-          var base = View.pressh - d * View.unit + View.w * 3/2 / View.nbars;
-          return !d || d * View.unit > View.w * 5/6 / View.nbars ? base : base - View.w * 5/6 / View.nbars
-        });
-    },
-    trmt = function (d0, i0) {
-      View.mbar = null;
-      View.totals.select("g#bars").selectAll("rect")
-        .attr("fill", function (d, i) {return Util.color(i)});
-      View.totals.select("g#count").selectAll("text")
-        .attr("fill", function (d, i) {
-          return !d ? "transparent" : d * View.unit > View.w * 5/6 / View.nbars ? Util.ccon.apply(null, Util.hexrgb(Util.color(i))) : "black"
-        });
-      View.totals.select("g#quantile").selectAll("rect")
-        .attr("fill", function (d, i) { return Util.color(i) });
-      View.totals.select("g#quantile").selectAll("text")
-        .attr("fill", function (d, i) { return Util.ccon.apply(null, Util.hexrgb(Util.color(i))) });
-      View.follows.selectAll("rect")
-        .data(Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0))
-        .attr("y", View.pressh)
-        .attr("height", 0)
-      View.follows.selectAll("text")
-        .data(Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0))
-        .attr("y", View.h + 20)
-    },
-    lcmr = function (d0, i0) {
-      var self = this;
-      View.legend.selectAll("circle")
-        .data(ucolors)
-        .attr("fill", function (d) { return self === this ? d : Util.fade(d, .7) });
-      View.legend.select("g#ltip").selectAll("text")
-        .text(function (d, i) { return utypes[i0] });
-      View.legend.select("g#pcount").selectAll("text")
-        .filter(function (d, i) { return i0 == 0 ? i == 6 : i0 != 1 && i == 7 - i0 })
-        .attr("display", "inline");
-      lmr()
-    },
-    lcmt = function (d0, i0) {
-      View.legend.selectAll("circle")
-        .data(ucolors)
-        .attr("fill", function (d) { return d });
-      View.legend.select("g#ltip").selectAll("text")
-        .text(Array(16).join("\u00a0"));
-      View.legend.select("g#pcount").selectAll("text")
-        .filter(function (d, i) { return i0 == 0 ? i == 6 : i0 != 1 && i == 7 - i0 })
-        .attr("display", "none");
-      lmt()
-    },
-    ltmr = function () {
-      View.legend.selectAll("rect")
-        .transition()
-        .attr("x", View.w - 180)
-        .attr("width", 180);
-      View.legend.select("g#ltip").selectAll("text")
-        .transition()
-        .attr("x", View.w - 65);
-      d3.select(this)
-        .text("change chart");
-      View.legend.select("g#pcount").selectAll("text")
-        .transition()
-        .delay(250)
-        .attr("display", "inline");
-      lmr()
-    },
-    ltmt = function () {
-      View.legend.selectAll("rect")
-        .transition()
-        .attr("x", View.w - 100)
-        .attr("width", 100);
-      View.legend.select("g#ltip").selectAll("text")
-        .transition()
-        .attr("x", View.w - 50);
-      d3.select(this)
-        .text(Array(16).join("\u00a0"));
-      View.legend.select("g#pcount").selectAll("text")
-        .attr("display", "none");
-      lmt()
-    }
-    ltc = function () {
-      var t = View.charts.shift();
-      View[t].attr("display", "none");
-      View[View.charts[0]].attr("display", "inline");
-      View.charts.push(t)
-    },
-    lmr = function () {
-      View.legend.selectAll("rect")
-        .attr("fill-opacity", .8);
-      View.timer.selectAll("rect")
-        .attr("fill-opacity", .8)
-    }, 
-    lmt = function () {
-      View.legend.selectAll("rect")
-        .attr("fill-opacity", .5);
-      View.timer.selectAll("rect")
-        .attr("fill-opacity", .5)
-    },
-    pe = function (d0, i0) {
-      var s = new Date(d0[2]).getSeconds();
-      d3.select(this).selectAll("rect")
-        .data(function (d, i) { return s > 60 - d0[0] || s == 0 ? [61 - d0[0]] : [61 - d0[0] - s, s] })
-        .enter()
-        .append("rect")
-        .attr("x", function (d, i) {return i ? 0 : View.w * ((s + d0[0] - 1) % 60) / 60})
-        .attr("y", function (d, i) {
-          return View.munit * (
-            i + Math.floor(( d0[2] - 1000*(61-d0[0]) ) / 60000)
-            - Math.floor(( Data.raw[0][2] - 1000*(61-Data.raw[0][0]) ) / 60000)
-          )
-        })
-        .attr("width", function(d, i) {return d * View.w/60 - 1})
-        .attr("height", View.munit - 1)
-        .attr("fill", Util.color(d0[0] - 1))
-        .attr("fill-opacity", .5)
-    };
+  B.view.chart = d3.select("#chart")
+    .attr("width", B.view.w)
+    .attr("height", B.view.h + B.view.w / 6 / 60);
   
-  //components
-  View.chart = d3.select("#chart")
-    .attr("width", View.w)
-    .attr("height", View.h + View.w / 6 / View.nbars);
-  
-  View.aggregate = View.chart.append("g")
+  B.view.aggregate = B.view.chart.append("g")
     .attr("id", "aggregate")
-    .attr("width", View.w)
-    .attr("height", View.h - View.w / 2 / View.nbars);
-  View.aggregate.append("g")
+    .attr("width", B.view.w)
+    .attr("height", B.view.h - B.view.w / 2 / 60);
+  B.view.aggregate.append("g")
     .attr("id", "sandtimer");
-  View.aggregate.select("g#sandtimer").selectAll("rect")
+  B.view.aggregate.select("g#sandtimer").selectAll("rect")
     .data([60])
     .enter()
     .append("rect")
     .attr("x", 0)
-    .attr("y", View.w * 5/6 / View.nbars);
+    .attr("y", B.view.w * 5/6 / 60);
   
-  View.totals = View.aggregate.append("g")
+  B.view.totals = B.view.aggregate.append("g")
     .attr("id", "totals");
-  View.totals.append("g")
+  B.view.totals.append("g")
     .attr("id", "bars")
-  View.totals.select("g#bars").selectAll("rect")
-    .data(Data.tots.slice(1, 61))
+  B.view.totals.select("g#bars").selectAll("rect")
+    .data(B.data.tots.slice(1, 61))
     .enter()
     .append("rect")
-    .attr("fill", function (d, i) { return Util.color(i) })
-    .on("mouseover", trmr)
-    .on("mouseout", trmt);
-  View.totals.append("g")
+    .attr("fill", function (d, i) { return B.color(i).val })
+    .on("mouseover", B.view.events.trmr)
+    .on("mouseout", B.view.events.trmt);
+  B.view.totals.append("g")
     .attr("id", "count");
-  View.totals.select("g#count").selectAll("text")
-    .data(Data.tots.slice(1, 61))
+  B.view.totals.select("g#count").selectAll("text")
+    .data(B.data.tots.slice(1, 61))
     .enter()
     .append("text")
     .attr("text-anchor", "middle")
     .attr("font-family", "sans-serif")
     .attr("fill", "white");
-  View.totals.append("g")
+  B.view.totals.append("g")
     .attr("id", "label");
-  View.totals.select("g#label").selectAll("text")
-    .data(Data.tots.slice(1, 61))
+  B.view.totals.select("g#label").selectAll("text")
+    .data(B.data.tots.slice(1, 61))
     .enter()
     .append("text")
     .attr("text-anchor", "middle")
     .attr("font-family", "sans-serif");
-  View.totals.append("g")
+  B.view.totals.append("g")
     .attr("id", "quantile");
-  View.totals.select("g#quantile").selectAll("rect")
-    .data(Data.tots.slice(1, 61))
+  B.view.totals.select("g#quantile").selectAll("rect")
+    .data(B.data.tots.slice(1, 61))
     .enter()
     .append("rect")
-    .attr("fill", function (d, i) { return Util.color(i) })
+    .attr("fill", function (d, i) { return B.color(i).val })
     .attr("y", 0)
-    .attr("height", View.w * 5/6 / View.nbars - 1)
-    .on("mouseover", trmr)
-    .on("mouseout", trmt);
-  View.totals.select("g#quantile").selectAll("text")
-    .data(Data.tots.slice(1, 61))
+    .attr("height", B.view.w * 5/6 / 60 - 1)
+    .on("mouseover", B.view.events.trmr)
+    .on("mouseout", B.view.events.trmt);
+  B.view.totals.select("g#quantile").selectAll("text")
+    .data(B.data.tots.slice(1, 61))
     .enter()
     .append("text")
     .attr("text-anchor", "middle")
     .attr("alignment-baseline", "central")
     .attr("font-family", "sans-serif")
-    .attr("font-size", Math.floor(View.w / 2 / View.nbars) + "px")
-    .attr("fill", function (d, i) { return Util.ccon.apply(null, Util.hexrgb(Util.color(i))) })
-    .attr("y", View.w * 5/12 / View.nbars);
+    .attr("font-size", Math.floor(B.view.w / 2 / 60) + "px")
+    .attr("fill", function (d, i) { return B.color(i).ccon.val })
+    .attr("y", B.view.w * 5/12 / 60);
   
-  View.follows = View.aggregate.append("g")
+  B.view.follows = B.view.aggregate.append("g")
     .attr("id", "follows");
-  View.follows.selectAll("rect")
-    .data(Data.tots.slice(1, 61))
+  B.view.follows.selectAll("rect")
+    .data(B.data.tots.slice(1, 61))
     .enter()
     .append("rect")
     .attr("fill-opacity", .4)
     .attr("fill", "black");
-  View.follows.selectAll("text")
-    .data(Data.tots.slice(1, 61))
+  B.view.follows.selectAll("text")
+    .data(B.data.tots.slice(1, 61))
     .enter()
     .append("text")
     .attr("text-anchor", "middle")
     .attr("font-family", "sans-serif")
     .attr("fill", "white");
   
-  View.timeseries = View.chart.append("g")
+  B.view.timeseries = B.view.chart.append("g")
     .attr("id", "timeseries")
-    .attr("width", View.w)
-    .attr("height", View.h - View.w / 2 / View.nbars);
+    .attr("width", B.view.w)
+    .attr("height", B.view.h - B.view.w / 2 / 60);
   
-  View.presses = View.timeseries.append("g")
+  B.view.presses = B.view.timeseries.append("g")
     .attr("id", "presses");
-  View.presses.append("g")
+  B.view.presses.append("g")
     .attr("id", "current");
-  View.presses.select("g#current").selectAll("rect")
+  B.view.presses.select("g#current").selectAll("rect")
     .data([0,0])
     .enter()
     .append("rect");
-  View.presses.append("g")
+  B.view.presses.append("g")
     .attr("id", "pindv");
-  View.presses.append("g")
+  B.view.presses.append("g")
     .attr("id", "psecs");
   
-  View.timer = View.chart.append("g")
+  B.view.timer = B.view.chart.append("g")
     .attr("id", "timer");
-  View.timer.append("rect")
-    .attr("x", View.w - 180)
+  B.view.timer.append("rect")
+    .attr("x", B.view.w - 180)
     .attr("y", 14)
     .attr("width", 180)
     .attr("height", 88)
     .attr("fill", "white")
     .attr("fill-opacity", .5)
-  View.timer.selectAll("text")
+  B.view.timer.selectAll("text")
     .data(["?"])
     .enter()
     .append("text")
@@ -346,45 +658,45 @@ init = function () {
     .attr("alignment-baseline", "middle")
     .attr("font-family", "sans-serif")
     .attr("font-size", "72px")
-    .attr("x", View.w - 20)
+    .attr("x", B.view.w - 20)
     .attr("y", 64)
     .text("?");
   
-  View.legend = View.chart.append("g")
+  B.view.legend = B.view.chart.append("g")
     .attr("id", "legend");
-  View.legend.append("rect")
-    .attr("x", View.w - 100)
+  B.view.legend.append("rect")
+    .attr("x", B.view.w - 100)
     .attr("y", 116)
     .attr("width", 100)
     .attr("height", 240)
     .attr("fill", "white")
     .attr("fill-opacity", .5)
-    .on("mouseover", lmr)
-    .on("mouseout", lmt);
-  View.legend.selectAll("circle")
-    .data(ucolors)
+    .on("mouseover", B.view.events.lmr)
+    .on("mouseout", B.view.events.lmt);
+  B.view.legend.selectAll("circle")
+    .data(B.data.ucolors)
     .enter()
     .append("circle")
     .attr("r", 7.5)
-    .attr("cx", View.w - 65)
+    .attr("cx", B.view.w - 65)
     .attr("cy", function (d, i) { return 140 + 20 * i })
     .attr("fill", function (d) { return d })
-    .on("mouseover", lcmr)
-    .on("mouseout", lcmt);
-  View.legend.append("g")
+    .on("mouseover", B.view.events.lcmr)
+    .on("mouseout", B.view.events.lcmt);
+  B.view.legend.append("g")
     .attr("id", "acount");
-  View.legend.select("g#acount").selectAll("text")
+  B.view.legend.select("g#acount").selectAll("text")
     .data([0,0,0,0,0,0,0,0,0,0])
     .enter()
     .append("text")
     .attr("alignment-baseline", "central")
     .attr("font-family", "sans-serif")
     .attr("font-size", "12px")
-    .attr("x", View.w - 50)
+    .attr("x", B.view.w - 50)
     .attr("y", function (d, i) { return 140 + 20 * i });
-  View.legend.append("g")
+  B.view.legend.append("g")
     .attr("id", "pcount");
-  View.legend.select("g#pcount").selectAll("text")
+  B.view.legend.select("g#pcount").selectAll("text")
     .data([0,0,0,0,0,0,0])
     .enter()
     .append("text")
@@ -392,333 +704,38 @@ init = function () {
     .attr("alignment-baseline", "central")
     .attr("font-family", "sans-serif")
     .attr("font-size", "12px")
-    .attr("x", View.w - 80)
+    .attr("x", B.view.w - 80)
     .attr("y", function (d, i) { return i == 6 ? 140 : 280 - 20 * i })
-    .attr("fill", function (d, i) { return Util.darken(ucolors[i == 6 ? 0 : 7 - i]) })
+    .attr("fill", function (d, i) { return B.color(B.data.ucolors[i == 6 ? 0 : 7 - i]).darken.val })
     .attr("display", "none");
-  View.legend.append("g")
+  B.view.legend.append("g")
     .attr("id", "ltip");
-  View.legend.select("g#ltip")
+  B.view.legend.select("g#ltip")
     .append("text")
     .attr("text-anchor", "middle")
     .attr("alignment-baseline", "middle")
     .attr("font-family", "sans-serif")
     .attr("font-size", "12px")
-    .attr("x", View.w - 50)
+    .attr("x", B.view.w - 50)
     .attr("y", 340)
     .text(Array(16).join("\u00a0"))
-    .on("mouseover", ltmr)
-    .on("mouseout", ltmt)
-    .on("click", ltc);
+    .on("mouseover", B.view.events.ltmr)
+    .on("mouseout", B.view.events.ltmt)
+    .on("click", B.view.events.ltc);
   
-  View.charts.forEach(function (d, i) { !i || View[d].attr("display", "none") });
+  B.view.charts.forEach(function (d, i) { !i || B.view[d].attr("display", "none") });
   
-
-  var
-    //Ajax call to r/thebutton
-    //TODO: organise within Util
-    buttonjax = function (callback) {
-      var raw = new XMLHttpRequest();
-      raw.onreadystatechange = function () {
-        if (raw.readyState !== 4) return;
-        if (raw.status === 200) callback(raw.responseText)
-      }
-      //Credit to github.com/lezed1 for the proxy. Thanks bro!
-      raw.open("get", "https://cors-unblocker.herokuapp.com/get?url=https%3A%2F%2Freddit.com%2Fr%2Fthebutton", true);
-      raw.timeout = 5000;
-      raw.send()
-    },
-
-    //Polls r/thebutton for active user count, attempting to minimise bandwidth
-    triggerinterval = function (val) {
-      !Interval.id || window.clearInterval(Interval.id);
-      Interval.adj = !!val;
-      Interval.id = window.setInterval(function () {
-        buttonjax(active);
-        console.log("Interval = " + Interval.val + ", val = " + val + ", usersonline = " + Data.rbtn["users-online"] + ", time = " + new Date(Date.now()).toLocaleTimeString() + ", debug = " + ++Interval.debug) //active user count debug
-        if (Interval.adj) {
-          Interval.adj = false;
-          triggerinterval()
-        }
-      }, val||Interval.val)
-    },
-    intmonitor = function () {
-      var l = Data.araw.length;
-      if (Interval.val==10000) {
-        if (l > 1 && !arawcomp(Data.araw[l-1], Data.araw[l-2])) {
-          Interval.val = 64500; //Active users refresh rate (??)
-          triggerinterval(90000)
-        }
-      } else {
-        if (!!Interval.test) {
-          if (Interval.test == "init") {
-            triggerinterval(54000);
-            Interval.test = new Array;
-            return
-          }
-          Interval.test.push(Data.araw[l - 1]);
-          if (Interval.test.length == 3) {
-            if (!arawcomp(Interval.test[0], Interval.test[1])) { triggerinterval(90000) }
-            else if (!arawcomp(Interval.test[1], Interval.test[2])) { triggerinterval(80000) }
-            else { triggerinterval(54000) }
-            Interval.test = null
-          } else { triggerinterval(10000) }
-        }
-      }
-    },
-    arawcomp = function (a1, a2) {
-      for (var i = 0; i < 9; i++) if (a1[i] != a2[i]) break;
-      return i == 9
-    },
-
-    //Update pressers data
-    prev = {},
-    tick = function (e) {
-      var pct = JSON.parse(e.data);
-      if (pct.type != "ticking") return;
-      var
-        dt = new Date(Date.UTC.apply(null, pct.payload.now_str.split("-").map(Number))),
-        curr = {
-          dt: dt.setMonth(dt.getMonth() - 1),
-          np: parseInt(pct.payload.participants_text.replace(/[^0-9]/,'')),
-          ts: pct.payload.seconds_left
-        },
-        ts, dp;
-      if (Object.keys(prev).length > 0 && curr.np != prev.np) {
-        Data.raw.push([ts = Data.last, dp = curr.np - prev.np, curr.dt]);
-        Data.tots[ts] += dp;
-        if (Data.raw.length > 1) Data.foll[Data.raw[Data.raw.length - 2][0]][ts] += dp
-      }
-      
-      var sum = function (a, b) { return a + b };
-      var subtots = [0,1,2,3,4,5].map(function (a) {return Data.tots.slice(a*10+2, a*10+12).reduce(sum)});
-      subtots.push(subtots.reduce(sum));
-      View.legend.select("g#pcount").selectAll("text")
-        .data(subtots)
-        .text(function (d, i) { return (!subtots[6] || i == 6 ? "" : "(" + (100 * d / subtots[6]).toFixed(2) + "%) ") + d });
-
-      //Render charts
-      View.chart = d3.select("#chart")
-        .attr("width", View.w)
-        .attr("height", View.h + View.w / 6 / View.nbars);
-      
-      if (View.charts[0] == "aggregate") {
-        
-        //Aggregate chart
-        View.aggregate
-          .attr("width", View.w)
-          .attr("height", View.pressh);
-        
-        if (curr.ts >= prev.ts) {
-          View.aggregate.select("g#sandtimer").selectAll("rect")
-            .transition()
-            .duration(0)
-            .attr("width", 0)
-            .attr("height", View.pressh)
-            .attr("fill", "#820080")
-            .attr("fill-opacity", .2)
-          d3.timer.flush()
-        }
-        View.aggregate.select("g#sandtimer").selectAll("rect")
-          .data([curr.ts])
-          .attr("style", function (d) {return "fill: " + Util.color(d - 1) + "; fill-opacity: .2"})
-          .attr("height", View.pressh)
-          .transition()
-          .duration(1000)
-          .ease("linear")
-          .attr("width", function (d) {return View.w - (d - 1) * View.w / View.nbars});
-        
-        View.totals.select("g#bars").selectAll("rect")
-          .data(Data.tots.slice(1, 61))
-          .transition()
-          .attr("x", function (d, i) {return View.w - (i + 1) * View.w / View.nbars})
-          .attr("y", function (d) {return View.pressh - d * View.unit + View.w * 5/6 / View.nbars})
-          .attr("width", View.w/View.nbars - 1)
-          .attr("height", function (d) {return d * View.unit});        
-        View.totals.select("g#count").selectAll("text")
-          .data(Data.tots.slice(1, 61))
-          .transition()
-          .text(function (d) { return d })
-          .attr("font-size", Math.floor(View.w / 2 / View.nbars) + "px")
-          .attr("fill", function (d, i) {
-            return !d || View.mbar !== null && i != View.mbar - 1 ? "transparent" : d * View.unit > View.w * 5/6 / View.nbars ? Util.ccon.apply(null, Util.hexrgb(Util.color(i))) : "black"
-          })
-          .attr("x", function (d, i) {return View.w - (i + .5) * View.w / View.nbars - .5})
-          .attr("y", function (d) {
-            var base = View.pressh - d * View.unit + View.w * 3/2 / View.nbars;
-            return !d || d * View.unit > View.w * 5/6 / View.nbars ? base : base - View.w * 5/6 / View.nbars
-          });
-        View.totals.select("g#label").selectAll("text")
-          .data(Data.tots.slice(1, 61))
-          .text(function (d, i) { return i + 1 })
-          .attr("font-size", Math.floor(View.w / 2 / View.nbars) + "px")
-          .attr("x", function (d, i) {return View.w - (i + .5) * View.w / View.nbars - .5})
-          .attr("y", View.pressh + View.w * 3/2 / View.nbars);
-        var cmltot = (function (cmltot) {
-          for (var i = 59; i >= 0; i--) cmltot[i] += 59 - i ? cmltot[i + 1] : 0;
-          return cmltot
-        })( Data.tots.slice(1, 61) )
-        View.totals.select("g#quantile").selectAll("rect")
-          .data(cmltot)
-          .transition()
-          .attr("x", function (d, i) { return (d - Data.tots[i+1]) * View.w / Math.max(subtots[6], 1) })
-          .attr("width", function (d, i) { return Math.max( Data.tots[i+1] * View.w / Math.max(subtots[6], 1) - 1, 0) });
-        View.totals.select("g#quantile").selectAll("text")
-          .data(cmltot)
-          .text(function (d, i) { return Data.tots[i+1] || null })
-          .transition()
-          .attr("font-size", Math.floor(View.w / 2 / View.nbars) + "px")
-          .attr("x", function (d, i) {
-            return d * View.w / Math.max(subtots[6], 1) - Math.min(
-              View.w / View.nbars,
-              Data.tots[i+1] * View.w / Math.max(subtots[6], 1) + 1
-            ) / 2
-          })
-          .attr("y", View.w * 5/12 / View.nbars)
-
-        View.follows.selectAll("rect")
-          .data(
-            View.mbar === null ?
-              Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0) :
-              Data.foll[View.mbar].slice(1, 61)
-          )
-          .transition()
-          .attr("y", function (d) {return View.pressh - d * View.unit + View.w * 5/6 / View.nbars})
-          .attr("height", function (d) {return d * View.unit});
-        View.follows.selectAll("text")
-          .data(
-            View.mbar === null ?
-              Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0) :
-              Data.foll[View.mbar].slice(1, 61)
-          )
-          .attr("fill", function (d, i) {
-            var b = Util.color(i);
-            b = i == View.mbar - 1 ? b : b = Util.fade(b);
-            b = d * View.unit > View.w * 5/6 / View.nbars ? b = Util.darken(b, .4) : b;
-            return !d ? "transparent" : Util.ccon.apply( null, Util.hexrgb(b) )
-          })
-          .transition()
-          .text(function (d) { return d })
-          .attr("y", function (d) {
-            var base = View.pressh - d * View.unit + View.w * 3/2 / View.nbars;
-            return View.mbar === null ? View.h + 20 : !d || d * View.unit > View.w * 5/6 / View.nbars ? base : base - View.w * 5/6 / View.nbars
-          });
-        
-      } else if (View.charts[0] == "timeseries") {
-        
-        //Time-series chart
-        View.presses.select("g#pindv").selectAll("g")
-          .data(Data.raw)
-          .enter()
-          .append("g")
-          .each(pe);
-        var
-          d0 = [curr.ts, curr.dt],
-          s = new Date(d0[1]).getSeconds();
-        if (curr.ts >= prev.ts) {
-          View.presses.select("g#current").selectAll("rect")
-            .transition()
-            .duration(0)
-            .attr("x", function (d, i) {return i ? 0 : View.w * ((s + d0[0]) % 60) / 60})
-            .attr("y", function (d, i) {
-              return View.munit * (
-                 !Data.raw.length ? i : i + Math.floor(( d0[1] - 1000*(61-d0[0]) ) / 60000)
-                - Math.floor(( Data.raw[0][2] - 1000*(61-Data.raw[0][0]) ) / 60000)
-              )
-            })
-            .attr("width", 0)
-            .attr("fill", "#820080")
-          d3.timer.flush()
-        }
-        View.presses.select("g#current").selectAll("rect")
-          .data(s > 60 - d0[0] ? [61 - d0[0], 0] : [60 - d0[0] - s, s + 1])
-          .attr("fill", Util.color(d0[0] - 1))
-          .transition()
-          .duration(1000)
-          .ease("linear")
-          .attr("x", function (d, i) {return i ? 0 : View.w * ((s + d0[0]) % 60) / 60})
-          .attr("y", function (d, i) {
-            return View.munit * (
-               !Data.raw.length ? i : i + Math.floor(( d0[1] - 1000*(61-d0[0]) ) / 60000)
-              - Math.floor(( Data.raw[0][2] - 1000*(61-Data.raw[0][0]) ) / 60000)
-            )
-          })
-          .attr("width", function(d, i) {return !i || d ? Math.max(d * View.w/60 - 1, 0) : 0})
-          .attr("height", View.munit - 1);
-        View.presses.select("g#psecs").selectAll("text")
-          .data(Data.raw)
-          .enter()
-          .append("text")
-          .each(function (d, i) {
-            if (i>0 && (new Date(Data.raw[i][2]).getSeconds() + Data.raw[i][0]) % 60 < new Date(Data.raw[i-1][2]).getSeconds() + 1) {
-              View.presses.select("g#psecs").selectAll("text:nth-of-type(" + i + ")")[0][0].setAttribute(
-                "fill", Util.ccon.apply(null, Util.opmix(Util.color(Data.raw[i][0] - 1), Util.color(Data.raw[i-1][0] - 1), .5))
-              )
-            }
-          })
-          .text(function (d) { return d[0] })
-          .attr("x", function (d) { return View.w * (new Date(d[2]-1000).getSeconds() + .5) / 60 } )
-          .attr("y", function (d) {
-            return View.munit * (
-              Number(new Date(d[2]-1000).getSeconds() < 60 - d[0]) + .5 + Math.floor(( d[2] - 1000*(61-d[0]) ) / 60000)
-              - Math.floor(( Data.raw[0][2] - 1000*(61-Data.raw[0][0]) ) / 60000)
-            )
-          })
-          .attr("font-size", Math.max( Math.floor(Math.min( View.w / 120, View.munit / 2 )), 5) + "px")
-          .attr("alignment-baseline", "central")
-          .attr("text-anchor", "middle")
-          .attr("font-family", "sans-serif")
-          .attr("fill", function(d) {
-            return Util.ccon.apply(null, Util.op.apply(null, Util.hexrgb( Util.color(d[0] - 1) ).concat([.5])))
-          })
-      }
-
-      prev = curr;
-      Data.last = curr.ts
-      
-      //Sync timer
-      Interval.dt[1] = 0;
-      Interval.dt[0].push(setInterval(function () {
-        while (Interval.dt[0][1]) clearInterval(Interval.dt[0].shift());
-        Interval.dt[1] += .1;
-        View.timer.selectAll("text")
-          .data([(Data.last - Interval.dt[1]).toFixed(1)])
-          .text(function (d) { return d })
-          .attr("x", View.w - 20)
-      }, 100))
-    },
-
-    //Update active users data
-    active = function (resp) {
-      for (var i = 0, r, rbtnnew = []; i < 9; i++) {
-        rbtnnew.push(Data.rbtn[utypes[i]] = parseInt(
-          (new RegExp("(?:" + utypes[i] + ".{" + (i ? 11 : 94) + "})([0-9,]+)").exec(resp)||[,"0"])[1]
-            .replace(/[^0-9]/,'')
-        ))
-        r = i ? r - rbtnnew[i] : rbtnnew[i]
-      }
-      rbtnnew.push(Data.rbtn["no-flair"] = r);
-      View.legend.select("g#acount").selectAll("text")
-        .data(rbtnnew)
-        .text(function (d) { return d });
-      switch (Data.araw.length != 0) {
-        case true: if (arawcomp(rbtnnew, Data.araw[Data.araw.length - 1])) break
-        default: Data.araw.push(rbtnnew)
-      }
-      intmonitor()
-    };
-
   //Establish websocket connection to the button
-  buttonjax(function (resp) {
+  B.util.buttonjax(function (resp) {
     var wsurl, ws
     wsurl = /wss:\/\/wss[^"]+/.exec(resp)[0];
     ws = new WebSocket(wsurl||"wss://wss.redditmedia.com/thebutton?h=f29c65c5190049201b3dd46254aa01c89c5adefc&e=1428897437");
-    ws.onmessage = tick;
+    ws.onmessage = B.util.tick;
   });
 
   //Begin polling r/thebutton for active user count
-  triggerinterval();
+  B.util.triggerinterval();
   
   //Check to correct polling phase
-  setInterval(function () {Interval.test = "init"}, 600000)
+  setInterval(function () {B.interval.test = "init"}, 600000)
 }
