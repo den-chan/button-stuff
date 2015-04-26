@@ -1,7 +1,7 @@
 init = function () {
-  B = {
-    data: {
-      utypes: [
+  var
+    D = { //Data
+      types: [
         "users-online",
         "flair-no-press",
         "flair-press-6",
@@ -13,7 +13,7 @@ init = function () {
         "flair-cant-press",
         "no-flair"
       ],
-      ucolors: [
+      colors: [
         "#000",
         "#888",
         "#820080",
@@ -27,21 +27,61 @@ init = function () {
       ],
       raw: new Array,
       tots: Array.apply(null, Array(61)).map(Number.prototype.valueOf, 0),
+      cmltots: Array.apply(null, Array(61)).map(Number.prototype.valueOf, 0),
+      typetots: [0, 0, 0, 0, 0, 0, 0],
       foll: Array.apply(null, Array(61)).map(function(){return Array.apply(null, Array(61)).map(Number.prototype.valueOf, 0)}),
       last: null,
-      rbtn: function () {return B.data.utypes.reduce(function(o, v) { o[v] = 0; return o }, {})},
+      rbtn: function () {return D.types.reduce(function(o, v) { o[v] = 0; return o }, {})},
       araw: new Array //TODO: timestamping
     },
 
-    interval: {
+    I = { //Interval
       val: 10000,
       id: null,
       adj: false,
       test: null,
-      dt: [[],]
+      dt: [[],],
+
+      //Polls r/thebutton for active user count, attempting to minimise bandwidth
+      trigger: function (val) {
+        !I.id || window.clearInterval(I.id);
+        I.adj = !!val;
+        I.id = window.setInterval(function () {
+          U.buttonjax(U.active);
+          if (I.adj) {
+            I.adj = false;
+            I.trigger()
+          }
+        }, val||I.val)
+      },
+      monitor: function () {
+        var l = D.araw.length;
+        if (this.val==10000) {
+          if (l > 1 && !U.arawcomp(D.araw[l-1], D.araw[l-2])) {
+            I.val = 64500; //Active users refresh rate (??)
+            I.trigger(90000)
+          }
+        } else {
+          if (!!I.test) {
+            if (I.test == "init") {
+              I.trigger(54000);
+              I.test = new Array;
+              return
+            }
+            I.test.push(D.araw[l - 1]);
+            if (I.test.length == 3) {
+              if (!U.arawcomp(I.test[0], I.test[1])) { I.trigger(90000) }
+              else if (!U.arawcomp(I.test[1], I.test[2])) { I.trigger(80000) }
+              else { I.trigger(54000) }
+              I.test = null
+            } else { I.trigger(10000) }
+          }
+        }
+      }
+
     },
 
-    color: function (c) {
+    C = function (c) { //Colour
       var
         lookup = function (c) {
           return typeof c == "number" ?
@@ -87,14 +127,15 @@ init = function () {
           color = color.map(function (c) { return Math.floor(c * a + 255 * (1 - a)) });
           return this
         },
-        mix: function (v, a) {
+        mix: function (v) { return this.nmix(v, .5) },
+        nmix: function (v, a) {
           color = color.map(function(c, i) { return Math.floor( lookup(v)[i] * a + c * (1 - a) ) });
           return this
         }
       }
     },
 
-    util: {
+    U = { //Utilities
       //Ajax call to r/thebutton
       buttonjax: function (callback) {
         var raw = new XMLHttpRequest();
@@ -102,55 +143,13 @@ init = function () {
           if (raw.readyState !== 4) return;
           if (raw.status === 200) callback(raw.responseText)
         }
-        //Credit to github.com/lezed1 for the proxy. Thanks bro!
+        //Credit to github.com/lezed1 for the proxy.
         raw.open("get", "https://cors-unblocker.herokuapp.com/get?url=https%3A%2F%2Freddit.com%2Fr%2Fthebutton", true);
         raw.timeout = 5000;
         raw.send()
       },
 
-      //Polls r/thebutton for active user count, attempting to minimise bandwidth
-      triggerinterval: function (val) {
-        !B.interval.id || window.clearInterval(B.interval.id);
-        B.interval.adj = !!val;
-        B.interval.id = window.setInterval(function () {
-          B.util.buttonjax(B.util.active);
-          if (B.interval.adj) {
-            B.interval.adj = false;
-            B.util.triggerinterval()
-          }
-        }, val||B.interval.val)
-      },
-      intmonitor: function () {
-        var l = B.data.araw.length;
-        if (B.interval.val==10000) {
-          if (l > 1 && !B.util.arawcomp(B.data.araw[l-1], B.data.araw[l-2])) {
-            B.interval.val = 64500; //Active users refresh rate (??)
-            B.util.triggerinterval(90000)
-          }
-        } else {
-          if (!!B.interval.test) {
-            if (B.interval.test == "init") {
-              B.util.triggerinterval(54000);
-              B.interval.test = new Array;
-              return
-            }
-            B.interval.test.push(B.data.araw[l - 1]);
-            if (B.interval.test.length == 3) {
-              if (!B.util.arawcomp(B.interval.test[0], B.interval.test[1])) { B.util.triggerinterval(90000) }
-              else if (!B.util.arawcomp(B.interval.test[1], B.interval.test[2])) { B.util.triggerinterval(80000) }
-              else { B.util.triggerinterval(54000) }
-              B.interval.test = null
-            } else { B.util.triggerinterval(10000) }
-          }
-        }
-      },
-      arawcomp: function (a1, a2) {
-        for (var i = 0; i < 9; i++) if (a1[i] != a2[i]) break;
-        return i == 9
-      },
-
       //Update pressers data
-      prev: {},
       tick: function (e) {
         var pct = JSON.parse(e.data);
         if (pct.type != "ticking") return;
@@ -162,562 +161,597 @@ init = function () {
             ts: pct.payload.seconds_left
           },
           ts, dp;
-        if (Object.keys(B.util.prev).length > 0 && curr.np != B.util.prev.np) {
-          B.data.raw.push([ts = B.data.last, dp = curr.np - B.util.prev.np, curr.dt]);
-          B.data.tots[ts] += dp;
-          if (B.data.raw.length > 1) B.data.foll[B.data.raw[B.data.raw.length - 2][0]][ts] += dp
+        if ((U.prev||(U.prev = {})).np && curr.np != U.prev.np) {
+          D.raw.push([ts = D.last, dp = curr.np - U.prev.np, curr.dt]);
+          D.tots[ts] += dp;
+          D.typetots[Math.floor(ts / 10 - .2)] += dp;
+          D.typetots[6] += dp;
+          (function (i) { for (;i >= 0; i--) D.cmltots[i] += dp })(ts - 1);
+          if (D.raw.length > 1) D.foll[D.raw[D.raw.length - 2][0]][ts] += dp;
         }
 
         //Render charts
-        B.view.chart = d3.select("#chart")
-          .attr("width", B.view.w)
-          .attr("height", B.view.h + B.view.w / 6 / 60);
-        
-        var
-          sum = function (a, b) { return a + b },
-          subtots = [0,1,2,3,4,5].map(function (a) {return B.data.tots.slice(a*10+2, a*10+12).reduce(sum)});
-        subtots.push(subtots.reduce(sum));
-        B.view.legend.select("g#pcount").selectAll("text")
-          .data(subtots)
-          .text(function (d, i) { return (!subtots[6] || i == 6 ? "" : "(" + (100 * d / subtots[6]).toFixed(2) + "%) ") + d });
+        V.chart = d3.select("#chart")
+          .attr("width", V.w)
+          .attr("height", V.h + V.w / 6 / 60);
+        if (I.warn) {
+          clearInterval(I.warn);
+          delete I.warn;
+          V.timer.selectAll("rect")
+            .attr("fill", "white")
+            .on("mouseover", null)
+            .on("mouseout", null);
+          V.legend.select("g#ltip").selectAll("text")
+            .text(Array(16).join("\xa0"))
+        }
+        V.timer.selectAll("text")
+          .attr("x", V.w - 20);
+        V.legend.select("g#pcount").selectAll("text")
+          .data(D.typetots)
+          .text(function (d, i) { return (!D.cmltots[0] || i == 6 ? "" : "(" + (100 * d / D.cmltots[0]).toFixed(2) + "%) ") + d });
+        V.legend.append("rect")
+          .attr("x", V.w - 100);
+        V.legend.selectAll("circle")
+          .attr("cx", V.w - 65);
+        V.legend.select("g#acount").selectAll("text")
+          .attr("x", V.w - 50);
+        V.legend.select("g#pcount").selectAll("text")
+          .attr("x", V.w - 80);
+        V.legend.select("g#ltip")
+          .attr("x", V.w - 50);
 
-        if (B.view.charts[0] == "aggregate") {
+        if (V.charts[0] == "aggregate") {
 
           //Aggregate chart
-          B.view.aggregate
-            .attr("width", B.view.w)
-            .attr("height", B.view.pressh);
-
-          if (curr.ts >= B.util.prev.ts) {
-            B.view.aggregate.select("g#sandtimer").selectAll("rect")
+          V.aggregate
+            .attr("width", V.w)
+            .attr("height", V.pressh);
+          if (curr.ts >= U.prev.ts) {
+            V.aggregate.select("g#sandtimer").selectAll("rect")
               .transition()
               .duration(0)
               .attr("width", 0)
-              .attr("height", B.view.pressh)
+              .attr("height", V.pressh)
               .attr("fill", "#820080")
               .attr("fill-opacity", .2)
             d3.timer.flush()
           }
-          B.view.aggregate.select("g#sandtimer").selectAll("rect")
+          V.aggregate.select("g#sandtimer").selectAll("rect")
             .data([curr.ts])
-            .attr("style", function (d) {return "fill: " + B.color(d - 1).val + "; fill-opacity: .2"})
-            .attr("height", B.view.pressh)
+            .attr("style", function (d) {return "fill: " + C(d - 1).val + "; fill-opacity: .2"})
+            .attr("y", V.w * 5/6 / 60)
+            .attr("height", V.pressh)
             .transition()
             .duration(1000)
             .ease("linear")
-            .attr("width", function (d) {return B.view.w - (d - 1) * B.view.w / 60});
+            .attr("width", function (d) {return V.w - (d - 1) * V.w / 60});
 
-          B.view.totals.select("g#bars").selectAll("rect")
-            .data(B.data.tots.slice(1, 61))
+          V.totals.select("g#bars").selectAll("rect")
+            .data(D.tots.slice(1, 61))
             .transition()
-            .attr("x", function (d, i) {return B.view.w - (i + 1) * B.view.w / 60})
-            .attr("y", function (d) {return B.view.pressh - d * B.view.unit + B.view.w * 5/6 / 60})
-            .attr("width", B.view.w/60 - 1)
-            .attr("height", function (d) {return d * B.view.unit});        
-          B.view.totals.select("g#count").selectAll("text")
-            .data(B.data.tots.slice(1, 61))
+            .attr("x", function (d, i) {return V.w - (i + 1) * V.w / 60})
+            .attr("y", function (d) {return V.pressh - d * V.unit + V.w * 5/6 / 60})
+            .attr("width", V.w/60 - 1)
+            .attr("height", function (d) {return d * V.unit});        
+          V.totals.select("g#count").selectAll("text")
+            .data(D.tots.slice(1, 61))
             .transition()
             .text(function (d) { return d })
-            .attr("font-size", Math.floor(B.view.w / 2 / 60) + "px")
+            .attr("font-size", Math.floor(V.w / 2 / 60) + "px")
             .attr("fill", function (d, i) {
-              return !d || B.view.mbar !== null && i != B.view.mbar - 1 ? "transparent" : d * B.view.unit > B.view.w * 5/6 / 60 ? B.color(i).ccon.val : "black"
+              return !d || V.mbar !== null && i != V.mbar - 1 ? "transparent" : d * V.unit > V.w * 5/6 / 60 ? C(i).ccon.val : "black"
             })
-            .attr("x", function (d, i) {return B.view.w - (i + .5) * B.view.w / 60 - .5})
+            .attr("x", function (d, i) {return V.w - (i + .5) * V.w / 60 - .5})
             .attr("y", function (d) {
-              var base = B.view.pressh - d * B.view.unit + B.view.w * 3/2 / 60;
-              return !d || d * B.view.unit > B.view.w * 5/6 / 60 ? base : base - B.view.w * 5/6 / 60
+              var base = V.pressh - d * V.unit + V.w * 3/2 / 60;
+              return !d || d * V.unit > V.w * 5/6 / 60 ? base : base - V.w * 5/6 / 60
             });
-          B.view.totals.select("g#label").selectAll("text")
-            .data(B.data.tots.slice(1, 61))
+          V.totals.select("g#label").selectAll("text")
+            .data(D.tots.slice(1, 61))
             .text(function (d, i) { return i + 1 })
-            .attr("font-size", Math.floor(B.view.w / 2 / 60) + "px")
-            .attr("x", function (d, i) {return B.view.w - (i + .5) * B.view.w / 60 - .5})
-            .attr("y", B.view.pressh + B.view.w * 3/2 / 60);
-          var cmltot = (function (cmltot) {
-            for (var i = 59; i >= 0; i--) cmltot[i] += 59 - i ? cmltot[i + 1] : 0;
-            return cmltot
-          })( B.data.tots.slice(1, 61) )
-          B.view.totals.select("g#quantile").selectAll("rect")
-            .data(cmltot)
+            .attr("font-size", Math.floor(V.w / 2 / 60) + "px")
+            .attr("x", function (d, i) {return V.w - (i + .5) * V.w / 60 - .5})
+            .attr("y", V.pressh + V.w * 3/2 / 60);
+          V.totals.select("g#quantile").selectAll("rect")
+            .data(D.cmltots)
             .transition()
-            .attr("x", function (d, i) { return (d - B.data.tots[i+1]) * B.view.w / Math.max(subtots[6], 1) })
-            .attr("width", function (d, i) { return Math.max( B.data.tots[i+1] * B.view.w / Math.max(subtots[6], 1) - 1, 0) });
-          B.view.totals.select("g#quantile").selectAll("text")
-            .data(cmltot)
-            .text(function (d, i) { return B.data.tots[i+1] || null })
+            .attr("x", function (d, i) { return (d - D.tots[i+1]) * V.w / Math.max(D.cmltots[0], 1) })
+            .attr("width", function (d, i) { return Math.max( D.tots[i+1] * V.w / Math.max(D.cmltots[0], 1) - 1, 0) })
+            .attr("height", V.w * 5/6 / 60 - 1);
+          V.totals.select("g#quantile").selectAll("text")
+            .data(D.cmltots)
+            .text(function (d, i) { return D.tots[i+1] || null })
             .transition()
-            .attr("font-size", Math.floor(B.view.w / 2 / 60) + "px")
+            .attr("font-size", Math.floor(V.w / 2 / 60) + "px")
             .attr("x", function (d, i) {
-              return d * B.view.w / Math.max(subtots[6], 1) - Math.min(
-                B.view.w / 60,
-                B.data.tots[i+1] * B.view.w / Math.max(subtots[6], 1) + 1
+              return d * V.w / Math.max(D.cmltots[0], 1) - Math.min(
+                V.w / 60,
+                D.tots[i+1] * V.w / Math.max(D.cmltots[0], 1) + 1
               ) / 2
             })
-            .attr("y", B.view.w * 5/12 / 60)
+            .attr("y", V.w * 5/12 / 60)
 
-          B.view.follows.selectAll("rect")
+          V.follows.selectAll("rect")
             .data(
-              B.view.mbar === null ?
+              V.mbar === null ?
                 Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0) :
-                B.data.foll[B.view.mbar].slice(1, 61)
+                D.foll[V.mbar].slice(1, 61)
             )
             .transition()
-            .attr("y", function (d) {return B.view.pressh - d * B.view.unit + B.view.w * 5/6 / 60})
-            .attr("height", function (d) {return d * B.view.unit});
-          B.view.follows.selectAll("text")
+            .attr("y", function (d) {return V.pressh - d * V.unit + V.w * 5/6 / 60})
+            .attr("height", function (d) {return d * V.unit});
+          V.follows.selectAll("text")
             .data(
-              B.view.mbar === null ?
+              V.mbar === null ?
                 Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0) :
-                B.data.foll[B.view.mbar].slice(1, 61)
+                D.foll[V.mbar].slice(1, 61)
             )
             .attr("fill", function (d, i) {
-              var b = B.color(i);
-              i == B.view.mbar - 1 || b.fade;
-              d * B.view.unit >= B.view.w * 5/6 / 60 || b.ndarken(.4);
+              var b = C(i);
+              i == V.mbar - 1 || b.fade;
+              d * V.unit >= V.w * 5/6 / 60 || b.ndarken(.4);
               return d ? b.ccon.val : "transparent"
             })
             .transition()
             .text(function (d) { return d })
             .attr("y", function (d) {
-              var base = B.view.pressh - d * B.view.unit + B.view.w * 3/2 / 60;
-              return B.view.mbar === null ? B.view.h + 20 : !d || d * B.view.unit > B.view.w * 5/6 / 60 ? base : base - B.view.w * 5/6 / 60
+              var base = V.pressh - d * V.unit + V.w * 3/2 / 60;
+              return V.mbar === null ? V.h + 20 : !d || d * V.unit > V.w * 5/6 / 60 ? base : base - V.w * 5/6 / 60
             });
 
-        } else if (B.view.charts[0] == "timeseries") {
+        } else if (V.charts[0] == "timeseries") {
 
           //Time-series chart
-          B.view.presses.select("g#pindv").selectAll("g")
-            .data(B.data.raw)
+          V.presses.select("g#pindv").selectAll("g")
+            .data(D.raw)
             .enter()
             .insert("g", ":first-child")
-            .each(B.view.events.pe)
-            .on("mouseover", B.view.events.pr)
-            .on("mouseout", B.view.events.pt);
+            .each(V.events.pe)
+            .on("mouseover", V.events.pr)
+            .on("mouseout", V.events.pt);
           var
             d0 = [curr.ts, curr.dt],
             s = new Date(d0[1]).getSeconds();
-          if (curr.ts >= B.util.prev.ts) {
-            B.view.presses.select("g#current").selectAll("rect")
+          if (curr.ts >= U.prev.ts) {
+            V.presses.select("g#current").selectAll("rect")
               .transition()
               .duration(0)
-              .attr("x", function (d, i) {return i ? 0 : B.view.w * ((s + d0[0]) % 60) / 60})
+              .attr("x", function (d, i) {return i ? 0 : V.w * ((s + d0[0]) % 60) / 60})
               .attr("y", function (d, i) {
-                return 1 + B.view.munit * (
-                   !B.data.raw.length ? i : i + Math.floor(( d0[1] - 1000*(61-d0[0]) ) / 60000)
-                  - Math.floor(( B.data.raw[0][2] - 1000*(61-B.data.raw[0][0]) ) / 60000)
+                return 1 + V.munit * (
+                   !D.raw.length ? i : i + Math.floor(( d0[1] - 1000*(61 - d0[0]) ) / 60000)
+                  - Math.floor(( D.raw[0][2] - 1000*(61 - D.raw[0][0]) ) / 60000)
                 )
               })
               .attr("width", 0)
               .attr("fill", "#820080")
             d3.timer.flush()
           }
-          B.view.presses.select("g#current").selectAll("rect")
+          V.presses.select("g#current").selectAll("rect")
             .data(s > 60 - d0[0] ? [61 - d0[0], 0] : [60 - d0[0] - s, s + 1])
-            .attr("fill", B.color(d0[0] - 1).val)
+            .attr("fill", C(d0[0] - 1).val)
             .transition()
             .duration(1000)
             .ease("linear")
-            .attr("x", function (d, i) {return i ? 0 : B.view.w * ((s + d0[0]) % 60) / 60})
+            .attr("x", function (d, i) {return i ? 0 : V.w * ((s + d0[0]) % 60) / 60})
             .attr("y", function (d, i) {
-              return 1 + B.view.munit * (
-                 !B.data.raw.length ? i : i + Math.floor(( d0[1] - 1000*(61-d0[0]) ) / 60000)
-                - Math.floor(( B.data.raw[0][2] - 1000*(61-B.data.raw[0][0]) ) / 60000)
+              return 1 + V.munit * (
+                 !D.raw.length ? i : i + Math.floor(( d0[1] - 1000*(61 - d0[0]) ) / 60000)
+                - Math.floor(( D.raw[0][2] - 1000*(61 - D.raw[0][0]) ) / 60000)
               )
             })
-            .attr("width", function(d, i) {return !i || d ? Math.max(d * B.view.w/60 - 1, 0) : 0})
-            .attr("height", B.view.munit - 1);
-          B.view.presses.select("g#psecs").selectAll("text")
-            .data(B.data.raw)
+            .attr("width", function(d, i) {return !i || d ? Math.max(d * V.w/60 - 1, 0) : 0})
+            .attr("height", V.munit - 1);
+          V.presses.select("g#psecs").selectAll("text")
+            .data(D.raw)
             .enter()
             .append("text")
             .text(function (d) { return d[0] })
-            .attr("x", function (d) { return B.view.w * (new Date(d[2]-1000).getSeconds() + .5) / 60 } )
+            .attr("x", function (d) { return V.w * (new Date(d[2]-1000).getSeconds() + .5) / 60 } )
             .attr("y", function (d) {
-              return 1 + B.view.munit * (
-                Number(new Date(d[2]-1000).getSeconds() < 60 - d[0]) + .5 + Math.floor(( d[2] - 1000*(61-d[0]) ) / 60000)
-                - Math.floor(( B.data.raw[0][2] - 1000*(61-B.data.raw[0][0]) ) / 60000)
+              return 1 + V.munit * (
+                Number(new Date(d[2]-1000).getSeconds() < 60 - d[0]) + .5 + Math.floor(( d[2] - 1000*(61 - d[0]) ) / 60000)
+                - Math.floor(( D.raw[0][2] - 1000*(61 - D.raw[0][0]) ) / 60000)
               )
             })
-            .attr("font-size", Math.max( Math.floor(Math.min( B.view.w / 120, B.view.munit / 2 )), 5) + "px")
+            .attr("font-size", Math.max( Math.floor(Math.min( V.w / 120, V.munit / 2 )), 5) + "px")
             .attr("alignment-baseline", "central")
             .attr("text-anchor", "middle")
             .attr("font-family", "sans-serif")
-            .attr("fill", function(d) { return B.color(d[0] - 1).op.ccon.val })
+            .attr("fill", function(d) { return C(d[0] - 1).op.ccon.val })
             .each(function (d, i) {
-              if (i>0 && (new Date(B.data.raw[i][2]).getSeconds() + B.data.raw[i][0]) % 60 < new Date(B.data.raw[i-1][2]).getSeconds() + 1) {
-                B.view.presses.select("g#psecs").selectAll("text:nth-of-type(" + i + ")")
-                  .attr("fill", B.color(B.data.raw[i][0] - 1).op.mix(B.data.raw[i-1][0] - 1, .5).ccon.val)
+              if (i>0 && (new Date(D.raw[i][2]).getSeconds() + D.raw[i][0]) % 60 < new Date(D.raw[i-1][2]).getSeconds() + 1) {
+                V.presses.select("g#psecs").selectAll("text:nth-of-type(" + i + ")")
+                  .attr("fill", C(D.raw[i][0] - 1).op.mix(D.raw[i-1][0] - 1).ccon.val)
               }
             })
         }
 
-        B.util.prev = curr;
-        B.data.last = curr.ts
+        U.prev = curr;
+        D.last = curr.ts
 
         //Sync timer
-        B.interval.dt[1] = 0;
-        B.interval.dt[0].push(setInterval(function () {
-          while (B.interval.dt[0][1]) clearInterval(B.interval.dt[0].shift());
-          B.interval.dt[1] += .1;
-          B.view.timer.selectAll("text")
-            .data([(B.data.last - B.interval.dt[1]).toFixed(1)])
-            .text(function (d) { return d })
-            .attr("x", B.view.w - 20)
+        I.dt[1] = 0;
+        I.dt[0].push(setInterval(function () {
+          while (I.dt[0][1]) clearInterval(I.dt[0].shift());
+          V.timer.selectAll("text")
+            .data([(D.last - (I.dt[1] += .1)).toFixed(1)])
+            .text(function (d) { return d });
+          if (Math.abs(I.dt[1] - 2) < 1e-9) setTimeout(U.warn, 0)
         }, 100))
+      },
+      
+      warn: function () {
+        V.timer.selectAll("rect")
+          .on("mouseover", function () {
+            V.legend.select("g#ltip").selectAll("text")
+              .text("Connection lost")
+          })
+          .on("mouseout", function () {
+            V.legend.select("g#ltip").selectAll("text")
+              .text(Array(16).join("\xa0"))
+          });
+        I.warn = setInterval(function () {
+          V.timer.selectAll("rect")
+            .attr("fill", Math.floor(Date.now()/500) % 2 ? "red" : "white")
+        }, 500)
       },
 
       //Update active users data
       active: function (resp) {
-        for (var i = 0, r, rbtnnew = []; i < 9; i++) {
-          rbtnnew.push(B.data.rbtn[B.data.utypes[i]] = parseInt(
-            (new RegExp("(?:" + B.data.utypes[i] + ".{" + (i ? 11 : 94) + "})([0-9,]+)").exec(resp)||[,"0"])[1]
+        for (var i = 0, r, anew = []; i < 9; i++) {
+          anew.push(D.rbtn[D.types[i]] = parseInt(
+            (new RegExp("(?:" + D.types[i] + ".{" + (i ? 11 : 94) + "})([0-9,]+)").exec(resp) || [, "0"])[1]
               .replace(/[^0-9]/,'')
           ))
-          r = i ? r - rbtnnew[i] : rbtnnew[i]
+          r = i ? r - anew[i] : anew[i]
         }
-        rbtnnew.push(B.data.rbtn["no-flair"] = r);
-        B.view.legend.select("g#acount").selectAll("text")
-          .data(rbtnnew)
+        anew.push(D.rbtn["no-flair"] = r);
+        V.legend.select("g#acount").selectAll("text")
+          .data(anew)
           .text(function (d) { return d });
-        switch (B.data.araw.length != 0) {
-          case true: if (B.util.arawcomp(rbtnnew, B.data.araw[B.data.araw.length - 1])) break
-          default: B.data.araw.push(rbtnnew)
+        switch (D.araw.length != 0) {
+          case true: if (U.arawcomp(anew, D.araw[D.araw.length - 1])) break
+          default: D.araw.push(anew)
         }
-        B.util.intmonitor()
+        I.monitor()
+      },
+
+      arawcomp: function (a1, a2) {
+        for (var i = 0; i < 9; i++) if (a1[i] != a2[i]) break;
+        return i == 9
       }
     },
 
-    view: {
+    V = { //Views
       get w() {return window.innerWidth - 40},
       get h() {return window.innerHeight - 40},
-      get pressh() {return this.h - this.w * 4/3 / 60},
-      get unit() { return this.pressh / (Math.max.apply(null, B.data.tots) || 1) },
+      get pressh() {return V.h - V.w * 4/3 / 60},
+      get unit() { return V.pressh / (Math.max.apply(null, D.tots) || 1) },
       mbar: null,
       mpress: null,
       charts: ["timeseries", "aggregate"],//["aggregate", "timeseries"],
       munit: 20,
       events: {
         trmr: function (d0, i0) {
-          B.view.mbar = i0 + 1;
-          B.view.totals.select("g#bars").selectAll("rect")
-            .attr("fill", function (d, i) { return i == i0 ? B.color(i0).val : B.color(i).fade.val });
-          B.view.totals.select("g#count").selectAll("text")
-            .attr("fill", function (d, i) {return !d || i != i0 ? "transparent" : d * B.view.unit > B.view.w * 5/6 / 60 ? B.color(i).ccon.val : "black"});
-          B.view.totals.select("g#quantile").selectAll("rect")
-            .attr("fill", function (d, i) { return i == i0 ? B.color(i0).val : B.color(i).fade.val });
-          B.view.totals.select("g#quantile").selectAll("text")
-            .attr("fill", function (d, i) {return d && i == i0 ? B.color(i).ccon.val : "transparent"});
-          B.view.follows.selectAll("rect")
-            .data(B.data.foll[B.view.mbar].slice(1, 61))
-            .attr("x", function (d, i) {return B.view.w - (i + 1) * B.view.w / 60})
-            .attr("y", function (d) {return B.view.pressh - d * B.view.unit + B.view.w * 5/6 / 60})
-            .attr("width", B.view.w/60 - 1)
-            .attr("height", function (d) {return d * B.view.unit});
-          B.view.follows.selectAll("text")
-            .data(B.data.foll[B.view.mbar].slice(1, 61))
+          V.mbar = i0 + 1;
+          V.totals.select("g#bars").selectAll("rect")
+            .attr("fill", function (d, i) { return i == i0 ? C(i0).val : C(i).fade.val });
+          V.totals.select("g#count").selectAll("text")
+            .attr("fill", function (d, i) {return !d || i != i0 ? "transparent" : d * V.unit > V.w * 5/6 / 60 ? C(i).ccon.val : "black"});
+          V.totals.select("g#quantile").selectAll("rect")
+            .attr("fill", function (d, i) { return i == i0 ? C(i0).val : C(i).fade.val });
+          V.totals.select("g#quantile").selectAll("text")
+            .attr("fill", function (d, i) {return d && i == i0 ? C(i).ccon.val : "transparent"});
+          V.follows.selectAll("rect")
+            .data(D.foll[V.mbar].slice(1, 61))
+            .attr("x", function (d, i) {return V.w - (i + 1) * V.w / 60})
+            .attr("y", function (d) {return V.pressh - d * V.unit + V.w * 5/6 / 60})
+            .attr("width", V.w/60 - 1)
+            .attr("height", function (d) {return d * V.unit});
+          V.follows.selectAll("text")
+            .data(D.foll[V.mbar].slice(1, 61))
             .text(function (d) { return d })
-            .attr("font-size", Math.floor(B.view.w / 2 / 60) + "px")
+            .attr("font-size", Math.floor(V.w / 2 / 60) + "px")
             .attr("fill", function (d, i) {
-              var b = B.color(i);
+              var b = C(i);
               i != i0 || b.fade;
-              d * B.view.unit <= B.view.w * 5/6 / 60 || b.ndarken(.4);
+              d * V.unit <= V.w * 5/6 / 60 || b.ndarken(.4);
               return !d ? "transparent" : b.ccon.val
             })
-            .attr("x", function (d, i) {return B.view.w - (i + .5) * B.view.w / 60 - .5})
+            .attr("x", function (d, i) {return V.w - (i + .5) * V.w / 60 - .5})
             .attr("y", function (d) {
-              var base = B.view.pressh - d * B.view.unit + B.view.w * 3/2 / 60;
-              return !d || d * B.view.unit > B.view.w * 5/6 / 60 ? base : base - B.view.w * 5/6 / 60
+              var base = V.pressh - d * V.unit + V.w * 3/2 / 60;
+              return !d || d * V.unit > V.w * 5/6 / 60 ? base : base - V.w * 5/6 / 60
             });
-          B.view.legend.select("g#ltip").selectAll("text")
+          V.legend.select("g#ltip").selectAll("text")
             .text("Following presses")
         },
         trmt: function (d0, i0) {
-          B.view.mbar = null;
-          B.view.totals.select("g#bars").selectAll("rect")
-            .attr("fill", function (d, i) {return B.color(i).val});
-          B.view.totals.select("g#count").selectAll("text")
+          V.mbar = null;
+          V.totals.select("g#bars").selectAll("rect")
+            .attr("fill", function (d, i) {return C(i).val});
+          V.totals.select("g#count").selectAll("text")
             .attr("fill", function (d, i) {
-              return !d ? "transparent" : d * B.view.unit > B.view.w * 5/6 / 60 ? B.color(i).ccon.val : "black"
+              return !d ? "transparent" : d * V.unit > V.w * 5/6 / 60 ? C(i).ccon.val : "black"
             });
-          B.view.totals.select("g#quantile").selectAll("rect")
-            .attr("fill", function (d, i) { return B.color(i).val });
-          B.view.totals.select("g#quantile").selectAll("text")
-            .attr("fill", function (d, i) { return B.color(i).ccon.val });
-          B.view.follows.selectAll("rect")
+          V.totals.select("g#quantile").selectAll("rect")
+            .attr("fill", function (d, i) { return C(i).val });
+          V.totals.select("g#quantile").selectAll("text")
+            .attr("fill", function (d, i) { return C(i).ccon.val });
+          V.follows.selectAll("rect")
             .data(Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0))
-            .attr("y", B.view.pressh)
+            .attr("y", V.pressh)
             .attr("height", 0)
-          B.view.follows.selectAll("text")
+          V.follows.selectAll("text")
             .data(Array.apply(null, Array(60)).map(Number.prototype.valueOf, 0))
-            .attr("y", B.view.h + 20)
-          B.view.legend.select("g#ltip").selectAll("text")
-            .text(null)
+            .attr("y", V.h + 20)
+          V.legend.select("g#ltip").selectAll("text")
+            .text(Array(16).join("\xa0"))
         },
         lcmr: function (d0, i0) {
           var self = this;
-          B.view.legend.selectAll("circle")
-            .data(B.data.ucolors)
-            .attr("fill", function (d) { return self === this ? d : B.color(d).nfade(.7).val });
-          B.view.legend.select("g#ltip").selectAll("text")
-            .text(function (d, i) { return B.data.utypes[i0] });
-          B.view.legend.select("g#pcount").selectAll("text")
+          V.legend.selectAll("circle")
+            .data(D.colors)
+            .attr("fill", function (d) { return self === this ? d : C(d).nfade(.7).val });
+          V.legend.select("g#ltip").selectAll("text")
+            .text(function (d, i) { return D.types[i0] });
+          V.legend.select("g#pcount").selectAll("text")
             .filter(function (d, i) { return i0 == 0 ? i == 6 : i0 != 1 && i == 7 - i0 })
             .attr("display", "inline");
-          B.view.events.lmr()
+          V.events.lmr()
         },
         lcmt: function (d0, i0) {
-          B.view.legend.selectAll("circle")
-            .data(B.data.ucolors)
+          V.legend.selectAll("circle")
+            .data(D.colors)
             .attr("fill", function (d) { return d });
-          B.view.legend.select("g#ltip").selectAll("text")
-            .text(Array(16).join("\u00a0"));
-          B.view.legend.select("g#pcount").selectAll("text")
+          V.legend.select("g#ltip").selectAll("text")
+            .text(Array(16).join("\xa0"));
+          V.legend.select("g#pcount").selectAll("text")
             .filter(function (d, i) { return i0 == 0 ? i == 6 : i0 != 1 && i == 7 - i0 })
             .attr("display", "none");
-          B.view.events.lmt()
+          V.events.lmt()
         },
         ltmr: function () {
-          B.view.legend.selectAll("rect")
-            .transition()
-            .attr("x", B.view.w - 180)
-            .attr("width", 180);
-          B.view.legend.select("g#ltip").selectAll("text")
-            .transition()
-            .attr("x", B.view.w - 65);
           d3.select(this)
             .text("change chart");
-          B.view.legend.select("g#pcount").selectAll("text")
+          V.legend.select("g#pcount").selectAll("text")
             .transition()
             .delay(250)
             .attr("display", "inline");
-          B.view.events.lmr()
+          V.events.lmr()
         },
         ltmt: function () {
-          B.view.legend.selectAll("rect")
-            .transition()
-            .attr("x", B.view.w - 100)
-            .attr("width", 100);
-          B.view.legend.select("g#ltip").selectAll("text")
-            .transition()
-            .attr("x", B.view.w - 50);
           d3.select(this)
-            .text(Array(16).join("\u00a0"));
-          B.view.legend.select("g#pcount").selectAll("text")
-            .attr("display", "none");
-          B.view.events.lmt()
+            .text(Array(16).join("\xa0"));
+          V.events.lmt()
         },
         ltc: function () {
-          var t = B.view.charts.shift();
-          B.view[t].attr("display", "none");
-          B.view[B.view.charts[0]].attr("display", "inline");
-          B.view.charts.push(t)
+          var t = V.charts.shift();
+          V[t].attr("display", "none");
+          V[V.charts[0]].attr("display", "inline");
+          V.charts.push(t)
         },
         lmr: function () {
-          B.view.legend.selectAll("rect")
-            .attr("fill-opacity", .8);
-          B.view.timer.selectAll("rect")
+          V.legend.selectAll("rect")
+            .attr("fill-opacity", .8)
+            .transition()
+            .attr("x", V.w - 180)
+            .attr("width", 180);
+          V.legend.select("g#ltip").selectAll("text")
+            .transition()
+            .attr("x", V.w - 65);
+          V.timer.selectAll("rect")
             .attr("fill-opacity", .8)
         }, 
         lmt: function () {
-          B.view.legend.selectAll("rect")
-            .attr("fill-opacity", .5);
-          B.view.timer.selectAll("rect")
+          V.legend.selectAll("rect")
+            .attr("fill-opacity", .5)
+            .transition()
+            .attr("x", V.w - 100)
+            .attr("width", 100);
+          V.legend.select("g#pcount").selectAll("text")
+            .attr("display", "none");
+          V.legend.select("g#ltip").selectAll("text")
+            .transition()
+            .attr("x", V.w - 50);
+          V.timer.selectAll("rect")
             .attr("fill-opacity", .5)
         },
         pe: function (d0, i0) {
-          var s = new Date(d0[2]).getSeconds();
+          var
+            t = new Date(d0[2]),
+            s = t.getSeconds();
           d3.select(this).selectAll("rect")
             .data(function (d, i) { return s > 60 - d0[0] || s == 0 ? [61 - d0[0]] : [61 - d0[0] - s, s] })
             .enter()
             .append("rect")
-            .attr("x", function (d, i) {return i ? 0 : B.view.w * ((s + d0[0] - 1) % 60) / 60})
+            .attr("x", function (d, i) {return i ? 0 : V.w * ((s + d0[0] - 1) % 60) / 60})
             .attr("y", function (d, i) {
-              return 1 + B.view.munit * (
-                i + Math.floor(( d0[2] - 1000*(61-d0[0]) ) / 60000)
-                - Math.floor(( B.data.raw[0][2] - 1000*(61-B.data.raw[0][0]) ) / 60000)
+              return 1 + V.munit * (
+                i + Math.floor(( d0[2] - 1000*(61 - d0[0]) ) / 60000)
+                - Math.floor(( D.raw[0][2] - 1000*(61 - D.raw[0][0]) ) / 60000)
               )
             })
-            .attr("width", function(d, i) {return d * B.view.w/60 - 1})
-            .attr("height", B.view.munit - 1)
-            .attr("fill", B.color(d0[0] - 1).val)
+            .attr("width", function(d, i) {return d * V.w/60 - 1})
+            .attr("height", V.munit - 1)
+            .attr("fill", C(d0[0] - 1).val)
             .attr("fill-opacity", .5)
+            .append("title")
+            .text(d0[0] + "s \xd7 " + d0[1] + " | " + t.toLocaleTimeString() + " " + /\(([^)]*)/.exec(t)[1] + " (" + t.toLocaleDateString() + ")")
         },
         pr: function (d0) {
-          B.view.mpress = this;
           var
-            is = B.view.presses.select("g#pindv").selectAll("g")[0],
+            is = V.presses.select("g#pindv").selectAll("g")[0],
             i0 = is.length - 1 - is.indexOf(this),
-            d0 = d3.select(B.view.presses.select("g#pindv").selectAll("g")[0][i0]).data()[0],
+            d0 = d3.select(V.presses.select("g#pindv").selectAll("g")[0][i0]).data()[0],
             s = new Date(d0[2]).getSeconds(),
             c = s > 60 - d0[0] || s == 0,
             pd = function (d, i) {
               var
-                y = 1 + B.view.munit * (
-                  i + Math.floor(( d0[2] - 1000*(61-d0[0]) ) / 60000)
-                  - Math.floor(( B.data.raw[0][2] - 1000*(61-B.data.raw[0][0]) ) / 60000)
+                y = 1 + V.munit * (
+                  i + Math.floor(( d0[2] - 1000*(61 - d0[0]) ) / 60000)
+                  - Math.floor(( D.raw[0][2] - 1000*(61 - D.raw[0][0]) ) / 60000)
                 ),
-                p = "M" + ((B.view.w * (i ? 0 : c ? (s + 59) % 60 + 1 : 60) / 60) - 1 - .5 * i) + " " + (y - .5) +
-                  " h " + (2*i-1) * (d * B.view.w/60 - c) +
-                  " v " + (B.view.munit) +
-                  " h " + (1-2*i) * (d * B.view.w/60 - c);
+                p = "M" + ((V.w * (i ? 0 : c ? (s + 59) % 60 + 1 : 60) / 60) - 1 - .5 * i) + " " + (y - .5) +
+                  " h " + (2*i-1) * (d * V.w/60 - c) +
+                  " v " + V.munit +
+                  " h " + (1-2*i) * (d * V.w/60 - c);
               return c ? p + " Z" : p;
             };
-          B.view.ptip.select("g#border").selectAll("path")
+          V.ptip.select("g#border").selectAll("path")
             .data(function (d, i) { return c ? [61 - d0[0]] : [61 - d0[0] - s, s] })
             .enter()
             .append("path")
             .attr("d", pd)
             .attr("fill", "none")
             .attr("stroke", "black");
-
           d3.select(this).selectAll("rect").attr("fill-opacity", 1);
-          B.view.presses.select("g#psecs > text:nth-child(" + (i0 + 1) + ")")
-            .attr("fill", B.color(d0[0] - 1).ccon.val);
-          if (!i0 || (new Date(B.data.raw[i0][2]).getSeconds() + B.data.raw[i0][0]) % 60 > new Date(B.data.raw[i0-1][2]).getSeconds()) return;
-          B.view.presses.select("g#psecs > text:nth-child(" + i0 + ")")
-            .attr("fill", B.color(d0[0]).mix(d0[0] - 1, .5).ccon.val)
+          V.presses.select("g#psecs > text:nth-child(" + (i0 + 1) + ")")
+            .attr("fill", C(d0[0] - 1).ccon.val);
+          if (!i0 || (new Date(D.raw[i0][2]).getSeconds() + D.raw[i0][0]) % 60 > new Date(D.raw[i0-1][2]).getSeconds()) return;
+          V.presses.select("g#psecs > text:nth-child(" + i0 + ")")
+            .attr("fill", C(d0[0]).mix(d0[0] - 1).ccon.val)
             .attr("opacity", .3)
         },
         pt: function () {
           var
-            is = B.view.presses.select("g#pindv").selectAll("g")[0],
+            is = V.presses.select("g#pindv").selectAll("g")[0],
             i0 = is.length - 1 - is.indexOf(this),
-            d0 = d3.select(B.view.presses.select("g#pindv").selectAll("g")[0][i0]).data()[0];
-          B.view.ptip.select("g#border").selectAll("path")
+            d0 = d3.select(V.presses.select("g#pindv").selectAll("g")[0][i0]).data()[0];
+          V.ptip.select("g#border").selectAll("path")
             .data([])
             .exit()
             .remove();
-
           d3.select(this).selectAll("rect").attr("fill-opacity", .5);
-          B.view.presses.select("g#psecs > text:nth-child(" + (i0 + 1) + ")")
-            .attr("fill", B.color(d0[0] - 1).op.ccon.val);
-          if (!i0 || (new Date(B.data.raw[i0][2]).getSeconds() + B.data.raw[i0][0]) % 60 > new Date(B.data.raw[i0-1][2]).getSeconds()) return;
-          B.view.presses.select("g#psecs > text:nth-child(" + i0 + ")")
+          V.presses.select("g#psecs > text:nth-child(" + (i0 + 1) + ")")
+            .attr("fill", C(d0[0] - 1).op.ccon.val);
+          if (!i0 || (new Date(D.raw[i0][2]).getSeconds() + D.raw[i0][0]) % 60 > new Date(D.raw[i0-1][2]).getSeconds()) return;
+          V.presses.select("g#psecs > text:nth-child(" + i0 + ")")
             .each(function (d) { d1 = d })
-            .attr("fill", B.color(d1[0]).op.mix(d0[0], .5).ccon.val)
+            .attr("fill", C(d1[0]).op.mix(d0[0]).ccon.val)
             .attr("opacity", null);
-          B.view.mpress = null
+          V.mpress = null
         }
       }
-    }
-  };
+    };
   
   //Initialise chart
-  B.view.chart = d3.select("#chart")
-    .attr("width", B.view.w)
-    .attr("height", B.view.h + B.view.w / 6 / 60);
+  V.chart = d3.select("#chart")
+    .attr("width", V.w)
+    .attr("height", V.h + V.w / 6 / 60);
   
-  B.view.aggregate = B.view.chart.append("g")
+  V.aggregate = V.chart.append("g")
     .attr("id", "aggregate")
-    .attr("width", B.view.w)
-    .attr("height", B.view.h - B.view.w / 2 / 60);
-  B.view.aggregate.append("g")
+    .attr("width", V.w)
+    .attr("height", V.h - V.w / 2 / 60);
+  V.aggregate.append("g")
     .attr("id", "sandtimer");
-  B.view.aggregate.select("g#sandtimer").selectAll("rect")
+  V.aggregate.select("g#sandtimer").selectAll("rect")
     .data([60])
     .enter()
     .append("rect")
     .attr("x", 0)
-    .attr("y", B.view.w * 5/6 / 60);
+    .attr("y", V.w * 5/6 / 60);
   
-  B.view.totals = B.view.aggregate.append("g")
+  V.totals = V.aggregate.append("g")
     .attr("id", "totals");
-  B.view.totals.append("g")
+  V.totals.append("g")
     .attr("id", "bars")
-  B.view.totals.select("g#bars").selectAll("rect")
-    .data(B.data.tots.slice(1, 61))
+  V.totals.select("g#bars").selectAll("rect")
+    .data(D.tots.slice(1, 61))
     .enter()
     .append("rect")
-    .attr("fill", function (d, i) { return B.color(i).val })
-    .on("mouseover", B.view.events.trmr)
-    .on("mouseout", B.view.events.trmt);
-  B.view.totals.append("g")
+    .attr("fill", function (d, i) { return C(i).val })
+    .on("mouseover", V.events.trmr)
+    .on("mouseout", V.events.trmt);
+  V.totals.append("g")
     .attr("id", "count");
-  B.view.totals.select("g#count").selectAll("text")
-    .data(B.data.tots.slice(1, 61))
+  V.totals.select("g#count").selectAll("text")
+    .data(D.tots.slice(1, 61))
     .enter()
     .append("text")
     .attr("text-anchor", "middle")
     .attr("font-family", "sans-serif")
     .attr("fill", "white");
-  B.view.totals.append("g")
+  V.totals.append("g")
     .attr("id", "label");
-  B.view.totals.select("g#label").selectAll("text")
-    .data(B.data.tots.slice(1, 61))
+  V.totals.select("g#label").selectAll("text")
+    .data(D.tots.slice(1, 61))
     .enter()
     .append("text")
     .attr("text-anchor", "middle")
     .attr("font-family", "sans-serif");
-  B.view.totals.append("g")
+  V.totals.append("g")
     .attr("id", "quantile");
-  B.view.totals.select("g#quantile").selectAll("rect")
-    .data(B.data.tots.slice(1, 61))
+  V.totals.select("g#quantile").selectAll("rect")
+    .data(D.tots.slice(1, 61))
     .enter()
     .append("rect")
-    .attr("fill", function (d, i) { return B.color(i).val })
+    .attr("fill", function (d, i) { return C(i).val })
     .attr("y", 0)
-    .attr("height", B.view.w * 5/6 / 60 - 1)
-    .on("mouseover", B.view.events.trmr)
-    .on("mouseout", B.view.events.trmt);
-  B.view.totals.select("g#quantile").selectAll("text")
-    .data(B.data.tots.slice(1, 61))
+    .attr("height", V.w * 5/6 / 60 - 1)
+    .on("mouseover", V.events.trmr)
+    .on("mouseout", V.events.trmt);
+  V.totals.select("g#quantile").selectAll("text")
+    .data(D.tots.slice(1, 61))
     .enter()
     .append("text")
     .attr("text-anchor", "middle")
     .attr("alignment-baseline", "central")
     .attr("font-family", "sans-serif")
-    .attr("font-size", Math.floor(B.view.w / 2 / 60) + "px")
-    .attr("fill", function (d, i) { return B.color(i).ccon.val })
-    .attr("y", B.view.w * 5/12 / 60);
+    .attr("font-size", Math.floor(V.w / 2 / 60) + "px")
+    .attr("fill", function (d, i) { return C(i).ccon.val })
+    .attr("y", V.w * 5/12 / 60);
   
-  B.view.follows = B.view.aggregate.append("g")
+  V.follows = V.aggregate.append("g")
     .attr("id", "follows");
-  B.view.follows.selectAll("rect")
-    .data(B.data.tots.slice(1, 61))
+  V.follows.selectAll("rect")
+    .data(D.tots.slice(1, 61))
     .enter()
     .append("rect")
     .attr("fill-opacity", .4)
     .attr("fill", "black");
-  B.view.follows.selectAll("text")
-    .data(B.data.tots.slice(1, 61))
+  V.follows.selectAll("text")
+    .data(D.tots.slice(1, 61))
     .enter()
     .append("text")
     .attr("text-anchor", "middle")
     .attr("font-family", "sans-serif")
     .attr("fill", "white");
   
-  B.view.timeseries = B.view.chart.append("g")
+  V.timeseries = V.chart.append("g")
     .attr("id", "timeseries")
-    .attr("width", B.view.w)
-    .attr("height", B.view.h - B.view.w / 2 / 60);
+    .attr("width", V.w)
+    .attr("height", V.h - V.w / 2 / 60);
   
-  B.view.presses = B.view.timeseries.append("g")
+  V.presses = V.timeseries.append("g")
     .attr("id", "presses");
-  B.view.presses.append("g")
+  V.presses.append("g")
     .attr("id", "current");
-  B.view.presses.select("g#current").selectAll("rect")
+  V.presses.select("g#current").selectAll("rect")
     .data([0,0])
     .enter()
     .append("rect");
-  B.view.presses.append("g")
+  V.presses.append("g")
     .attr("id", "pindv");
-  B.view.presses.append("g")
+  V.presses.append("g")
     .attr("id", "psecs");
-  B.view.ptip = B.view.presses.append("g")
+  V.ptip = V.presses.append("g")
     .attr("id", "ptip");
-  B.view.ptip.append("g")
+  V.ptip.append("g")
     .attr("id", "border");
   
-  B.view.timer = B.view.chart.append("g")
+  V.timer = V.chart.append("g")
     .attr("id", "timer");
-  B.view.timer.append("rect")
-    .attr("x", B.view.w - 180)
+  V.timer.append("rect")
+    .attr("x", V.w - 180)
     .attr("y", 14)
     .attr("width", 180)
     .attr("height", 88)
     .attr("fill", "white")
     .attr("fill-opacity", .5)
-  B.view.timer.selectAll("text")
+  V.timer.selectAll("text")
     .data(["?"])
     .enter()
     .append("text")
@@ -725,84 +759,84 @@ init = function () {
     .attr("alignment-baseline", "middle")
     .attr("font-family", "sans-serif")
     .attr("font-size", "72px")
-    .attr("x", B.view.w - 20)
+    .attr("x", V.w - 20)
     .attr("y", 64)
     .text("?");
   
-  B.view.legend = B.view.chart.append("g")
+  V.legend = V.chart.append("g")
     .attr("id", "legend");
-  B.view.legend.append("rect")
-    .attr("x", B.view.w - 100)
+  V.legend.append("rect")
+    .attr("x", V.w - 100)
     .attr("y", 116)
     .attr("width", 100)
     .attr("height", 240)
     .attr("fill", "white")
     .attr("fill-opacity", .5)
-    .on("mouseover", B.view.events.lmr)
-    .on("mouseout", B.view.events.lmt);
-  B.view.legend.selectAll("circle")
-    .data(B.data.ucolors)
+    .on("mouseover", V.events.lmr)
+    .on("mouseout", V.events.lmt);
+  V.legend.selectAll("circle")
+    .data(D.colors)
     .enter()
     .append("circle")
     .attr("r", 7.5)
-    .attr("cx", B.view.w - 65)
+    .attr("cx", V.w - 65)
     .attr("cy", function (d, i) { return 140 + 20 * i })
     .attr("fill", function (d) { return d })
-    .on("mouseover", B.view.events.lcmr)
-    .on("mouseout", B.view.events.lcmt);
-  B.view.legend.append("g")
+    .on("mouseover", V.events.lcmr)
+    .on("mouseout", V.events.lcmt);
+  V.legend.append("g")
     .attr("id", "acount");
-  B.view.legend.select("g#acount").selectAll("text")
+  V.legend.select("g#acount").selectAll("text")
     .data([0,0,0,0,0,0,0,0,0,0])
     .enter()
     .append("text")
     .attr("alignment-baseline", "central")
     .attr("font-family", "sans-serif")
     .attr("font-size", "12px")
-    .attr("x", B.view.w - 50)
+    .attr("x", V.w - 50)
     .attr("y", function (d, i) { return 140 + 20 * i });
-  B.view.legend.append("g")
+  V.legend.append("g")
     .attr("id", "pcount");
-  B.view.legend.select("g#pcount").selectAll("text")
-    .data([0,0,0,0,0,0,0])
+  V.legend.select("g#pcount").selectAll("text")
+    .data(D.typetots)
     .enter()
     .append("text")
     .attr("text-anchor", "end")
     .attr("alignment-baseline", "central")
     .attr("font-family", "sans-serif")
     .attr("font-size", "12px")
-    .attr("x", B.view.w - 80)
+    .attr("x", V.w - 80)
     .attr("y", function (d, i) { return i == 6 ? 140 : 280 - 20 * i })
-    .attr("fill", function (d, i) { return B.color(B.data.ucolors[i == 6 ? 0 : 7 - i]).darken.val })
+    .attr("fill", function (d, i) { return C(D.colors[i == 6 ? 0 : 7 - i]).darken.val })
     .attr("display", "none");
-  B.view.legend.append("g")
+  V.legend.append("g")
     .attr("id", "ltip");
-  B.view.legend.select("g#ltip")
+  V.legend.select("g#ltip")
     .append("text")
     .attr("text-anchor", "middle")
     .attr("alignment-baseline", "middle")
     .attr("font-family", "sans-serif")
     .attr("font-size", "12px")
-    .attr("x", B.view.w - 50)
+    .attr("x", V.w - 50)
     .attr("y", 340)
-    .text(Array(16).join("\u00a0"))
-    .on("mouseover", B.view.events.ltmr)
-    .on("mouseout", B.view.events.ltmt)
-    .on("click", B.view.events.ltc);
+    .text(Array(16).join("\xa0"))
+    .on("mouseover", V.events.ltmr)
+    .on("mouseout", V.events.ltmt)
+    .on("click", V.events.ltc);
   
-  B.view.charts.forEach(function (d, i) { !i || B.view[d].attr("display", "none") });
+  V.charts.forEach(function (d, i) { !i || V[d].attr("display", "none") });
   
   //Establish websocket connection to the button
-  B.util.buttonjax(function (resp) {
+  U.buttonjax(function (resp) {
     var wsurl, ws
     wsurl = /wss:\/\/wss[^"]+/.exec(resp)[0];
     ws = new WebSocket(wsurl||"wss://wss.redditmedia.com/thebutton?h=f29c65c5190049201b3dd46254aa01c89c5adefc&e=1428897437");
-    ws.onmessage = B.util.tick;
+    ws.onmessage = U.tick;
   });
 
   //Begin polling r/thebutton for active user count
-  B.util.triggerinterval();
+  I.trigger();
   
   //Check to correct polling phase
-  setInterval(function () {B.interval.test = "init"}, 600000)
+  setInterval(function () {I.test = "init"}, 600000)
 }
